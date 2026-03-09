@@ -25,7 +25,9 @@ router.post('/login', async (req, res) => {
       to: user.email,
       name: user.name,
       role: user.role,
-    }).catch(() => {});
+    }).catch((error) => {
+      console.error('Login notification email failed:', error?.message || error);
+    });
 
     return res.json({
       id: user._id,

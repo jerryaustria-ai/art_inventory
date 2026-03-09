@@ -100,9 +100,10 @@ header p {
 .mobile-menu-panel {
   position: absolute;
   top: calc(100% + 0.45rem);
-  right: 0;
+  left: 0;
+  right: auto;
   z-index: 30;
-  width: 200px;
+  width: min(220px, calc(100vw - 1.5rem));
   border: 1px solid #d8e0e1;
   border-radius: 12px;
   padding: 0.55rem;
