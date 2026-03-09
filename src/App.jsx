@@ -114,6 +114,12 @@ function escapeCsv(value) {
   return stringValue;
 }
 
+function shortItemId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'N/A';
+  return raw.slice(0, 5);
+}
+
 function InventoryForm({ onSubmit, editingItem, onCancel }) {
   const [form, setForm] = useState(editingItem || blankForm);
   const [formError, setFormError] = useState('');
@@ -1913,6 +1919,10 @@ function App() {
             <div className="details-main">
               <div className="details-grid">
                 <p>
+                  <strong>Item ID:</strong>{' '}
+                  <span title={selectedItem.id}>{shortItemId(selectedItem.id)}</span>
+                </p>
+                <p>
                   <strong>Year:</strong> {selectedItem.year || 'Not set'}
                 </p>
                 <p>
@@ -1945,6 +1955,10 @@ function App() {
               </div>
               <div className="qr-block">
                 <h3>QR Code</h3>
+                <p className="muted qr-item-id">
+                  <strong>Item ID:</strong>{' '}
+                  <span title={selectedItem.id}>{shortItemId(selectedItem.id)}</span>
+                </p>
                 {detailsQr ? (
                   <img src={detailsQr} alt={`QR code for ${selectedItem.title}`} className="qr-image" />
                 ) : (
