@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import jsQR from 'jsqr';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 const AUTH_STORAGE_KEY = 'art_inventory_auth_v1';
@@ -511,6 +512,7 @@ function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState('');
+  const [isQrPhotoScanning, setIsQrPhotoScanning] = useState(false);
   const [pendingItemId, setPendingItemId] = useState(readItemIdFromUrl);
   const [imageZoom, setImageZoom] = useState(1);
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
@@ -521,6 +523,7 @@ function App() {
   const scannerStreamRef = useRef(null);
   const scannerTimerRef = useRef(null);
   const isScannerBusyRef = useRef(false);
+  const qrPhotoInputRef = useRef(null);
   const isPictureOnly = displayMode === 'image';
   const canManage = session?.role === 'admin' || session?.role === 'super admin';
   const canOpenAdminPage = session?.role === 'super admin';
@@ -1258,6 +1261,7 @@ function App() {
   const closeQrScanner = () => {
     setIsQrScannerOpen(false);
     setQrScanError('');
+    setIsQrPhotoScanning(false);
     stopQrScanner();
   };
 
@@ -1289,12 +1293,41 @@ function App() {
     setApiError('');
   };
 
+  const scanQrFromImageFile = async (file) => {
+    if (!file) return;
+    setIsQrPhotoScanning(true);
+    setQrScanError('');
+    try {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('Canvas unavailable');
+      }
+
+      context.drawImage(bitmap, 0, 0);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const result = jsQR(imageData.data, imageData.width, imageData.height);
+      if (!result?.data) {
+        setQrScanError('No QR code found in image. Please try again.');
+        return;
+      }
+      handleScannedQr(result.data);
+    } catch {
+      setQrScanError('Unable to scan this photo. Please try a clearer QR image.');
+    } finally {
+      setIsQrPhotoScanning(false);
+    }
+  };
+
   useEffect(() => {
     if (!isQrScannerOpen) return;
 
     const startScanner = async () => {
       if (!('BarcodeDetector' in window)) {
-        setQrScanError('QR scanning is not supported on this browser.');
+        setQrScanError('Live QR scanning is not supported on this browser. Use camera photo scan below.');
         return;
       }
 
@@ -1908,7 +1941,27 @@ function App() {
             <p className="muted">Point your camera to an inventory QR code.</p>
             <video ref={scannerVideoRef} className="qr-scanner-video" playsInline muted autoPlay />
             {qrScanError ? <p className="form-error">{qrScanError}</p> : null}
+            <input
+              ref={qrPhotoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="qr-photo-input"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                await scanQrFromImageFile(file);
+                event.target.value = '';
+              }}
+            />
             <div className="actions">
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => qrPhotoInputRef.current?.click()}
+                disabled={isQrPhotoScanning}
+              >
+                {isQrPhotoScanning ? 'Scanning Photo...' : 'Scan From Camera Photo'}
+              </button>
               <button type="button" className="ghost" onClick={closeQrScanner}>
                 Close
               </button>

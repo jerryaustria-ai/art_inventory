@@ -537,6 +537,10 @@ button.danger {
   object-fit: cover;
 }
 
+.qr-photo-input {
+  display: none;
+}
+
 .image-viewer-actions {
   display: flex;
   gap: 0.5rem;
