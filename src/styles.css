@@ -527,14 +527,20 @@ button.danger {
   gap: 0.75rem;
 }
 
-.qr-scanner-video {
+.qr-scanner-reader {
   width: 100%;
   min-height: 260px;
   max-height: 62vh;
   border: 1px solid #d8e0e1;
   border-radius: 12px;
   background: #0b1320;
-  object-fit: cover;
+  overflow: hidden;
+}
+
+.qr-scanner-reader video {
+  width: 100% !important;
+  height: auto !important;
+  border-radius: 10px;
 }
 
 .qr-photo-input {

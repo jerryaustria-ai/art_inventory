@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
+import { Html5Qrcode } from 'html5-qrcode';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 const AUTH_STORAGE_KEY = 'art_inventory_auth_v1';
@@ -526,10 +527,8 @@ function App() {
   const panStartRef = useRef({ x: 0, y: 0 });
   const panOriginRef = useRef({ x: 0, y: 0 });
   const isPanningRef = useRef(false);
-  const scannerVideoRef = useRef(null);
-  const scannerStreamRef = useRef(null);
-  const scannerTimerRef = useRef(null);
-  const isScannerBusyRef = useRef(false);
+  const html5QrRef = useRef(null);
+  const hasHandledScanRef = useRef(false);
   const qrPhotoInputRef = useRef(null);
   const isPictureOnly = displayMode === 'image';
   const canManage = session?.role === 'admin' || session?.role === 'super admin';
@@ -1282,19 +1281,25 @@ function App() {
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
-  const stopQrScanner = () => {
-    if (scannerTimerRef.current) {
-      clearInterval(scannerTimerRef.current);
-      scannerTimerRef.current = null;
+  const stopQrScanner = async () => {
+    const scanner = html5QrRef.current;
+    if (!scanner) return;
+
+    try {
+      if (scanner.isScanning) {
+        await scanner.stop();
+      }
+    } catch {
+      // Ignore stop errors; scanner may already be stopped.
     }
-    if (scannerStreamRef.current) {
-      scannerStreamRef.current.getTracks().forEach((track) => track.stop());
-      scannerStreamRef.current = null;
+
+    try {
+      await scanner.clear();
+    } catch {
+      // Ignore clear errors.
     }
-    if (scannerVideoRef.current) {
-      scannerVideoRef.current.srcObject = null;
-    }
-    isScannerBusyRef.current = false;
+
+    html5QrRef.current = null;
   };
 
   const closeQrScanner = () => {
@@ -1302,7 +1307,8 @@ function App() {
     setQrScanError('');
     setIsQrPhotoScanning(false);
     setQrManualValue('');
-    stopQrScanner();
+    hasHandledScanRef.current = false;
+    void stopQrScanner();
   };
 
   const handleScannedQr = (rawValue) => {
@@ -1329,7 +1335,8 @@ function App() {
     updateItemIdInUrl(itemId);
     setIsMobileMenuOpen(false);
     setIsQrScannerOpen(false);
-    stopQrScanner();
+    hasHandledScanRef.current = false;
+    void stopQrScanner();
     setApiError('');
   };
 
@@ -1451,49 +1458,49 @@ function App() {
     if (!isQrScannerOpen) return;
 
     const startScanner = async () => {
-      if (!('BarcodeDetector' in window)) {
+      if (!navigator?.mediaDevices?.getUserMedia) {
         setQrScanError('Live QR scanning is not supported on this browser. Use camera photo scan below.');
         return;
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-          },
-          audio: false,
-        });
-        scannerStreamRef.current = stream;
-        const videoElement = scannerVideoRef.current;
-        if (!videoElement) return;
-        videoElement.srcObject = stream;
-        await videoElement.play();
+        setQrScanError('');
+        hasHandledScanRef.current = false;
 
-        const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-        scannerTimerRef.current = setInterval(async () => {
-          if (isScannerBusyRef.current || !scannerVideoRef.current) return;
-          if (scannerVideoRef.current.readyState < 2) return;
-          isScannerBusyRef.current = true;
-          try {
-            const codes = await detector.detect(scannerVideoRef.current);
-            if (codes.length > 0 && codes[0]?.rawValue) {
-              handleScannedQr(codes[0].rawValue);
-            }
-          } catch {
-            // Keep trying silently while stream is active.
-          } finally {
-            isScannerBusyRef.current = false;
-          }
-        }, 300);
+        const scanner = new Html5Qrcode('qr-reader');
+        html5QrRef.current = scanner;
+
+        const onScanSuccess = (decodedText) => {
+          if (hasHandledScanRef.current) return;
+          hasHandledScanRef.current = true;
+          handleScannedQr(decodedText);
+        };
+
+        const onScanFailure = () => {
+          // Keep scanning; ignore decode misses.
+        };
+
+        const config = {
+          fps: 10,
+          qrbox: { width: 220, height: 220 },
+          aspectRatio: 1,
+        };
+
+        try {
+          await scanner.start({ facingMode: { exact: 'environment' } }, config, onScanSuccess, onScanFailure);
+        } catch {
+          await scanner.start({ facingMode: 'environment' }, config, onScanSuccess, onScanFailure);
+        }
       } catch {
-        setQrScanError('Unable to access camera. Please allow camera permission.');
+        setQrScanError('Unable to start camera scanner. Allow camera permission or use photo scan below.');
       }
     };
 
-    startScanner();
+    void startScanner();
 
     return () => {
-      stopQrScanner();
+      hasHandledScanRef.current = false;
+      void stopQrScanner();
     };
   }, [isQrScannerOpen]);
 
@@ -2072,7 +2079,7 @@ function App() {
           <section className="panel modal qr-scanner-modal" onClick={(event) => event.stopPropagation()}>
             <h2>Scan QR Code</h2>
             <p className="muted">Point your camera to an inventory QR code.</p>
-            <video ref={scannerVideoRef} className="qr-scanner-video" playsInline muted autoPlay />
+            <div id="qr-reader" className="qr-scanner-reader" />
             {qrScanError ? <p className="form-error">{qrScanError}</p> : null}
             <input
               ref={qrPhotoInputRef}
