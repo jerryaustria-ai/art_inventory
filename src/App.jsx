@@ -82,6 +82,14 @@ function formatDateTime(value) {
   });
 }
 
+function escapeCsv(value) {
+  const stringValue = String(value ?? '');
+  if (stringValue.includes('"') || stringValue.includes(',') || stringValue.includes('\n')) {
+    return `"${stringValue.replaceAll('"', '""')}"`;
+  }
+  return stringValue;
+}
+
 function InventoryForm({ onSubmit, editingItem, onCancel }) {
   const [form, setForm] = useState(editingItem || blankForm);
   const [formError, setFormError] = useState('');
@@ -618,6 +626,33 @@ function App() {
     } finally {
       setIsAuditLoading(false);
     }
+  };
+
+  const handleExportAuditCsv = () => {
+    if (!auditLogs.length) return;
+
+    const header = ['Time', 'Action', 'Actor Email', 'Actor Role', 'Target Type', 'Target Label', 'Target ID'];
+    const rows = auditLogs.map((log) => [
+      formatDateTime(log.createdAt),
+      log.action || '',
+      log.actor?.email || '',
+      log.actor?.role || '',
+      log.target?.type || '',
+      log.target?.label || '',
+      log.target?.id || '',
+    ]);
+
+    const csv = [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const timestamp = new Date().toISOString().replaceAll(':', '-');
+    anchor.href = url;
+    anchor.download = `audit-logs-${timestamp}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   };
 
   const handleLogin = async (credentials) => {
@@ -1691,6 +1726,9 @@ function App() {
                 </select>
                 <button type="button" className="ghost" onClick={() => fetchAuditLogs(auditActionFilter)}>
                   Refresh
+                </button>
+                <button type="button" onClick={handleExportAuditCsv} disabled={auditLogs.length === 0}>
+                  Export CSV
                 </button>
               </div>
             </div>
