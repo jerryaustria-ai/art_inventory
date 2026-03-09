@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.get('/', async (_req, res) => {
   try {
-    const artworks = await Artwork.find().sort({ createdAt: -1 });
+    const artworks = await Artwork.find({ isActive: { $ne: false } }).sort({ createdAt: -1 });
     res.json(artworks);
   } catch {
     res.status(500).json({ message: 'Failed to fetch artworks' });
@@ -38,11 +38,25 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    const deleted = await Artwork.findByIdAndDelete(req.params.id);
-    if (!deleted) {
+    const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
+
+    if (actorRole === 'super admin') {
+      const deleted = await Artwork.findByIdAndDelete(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: 'Artwork not found' });
+      }
+      return res.status(204).send();
+    }
+
+    const deactivated = await Artwork.findByIdAndUpdate(
+      req.params.id,
+      { isActive: false },
+      { new: true, runValidators: true }
+    );
+    if (!deactivated) {
       return res.status(404).json({ message: 'Artwork not found' });
     }
-    res.status(204).send();
+    return res.json({ message: 'Artwork marked as inactive.' });
   } catch {
     res.status(400).json({ message: 'Failed to delete artwork' });
   }

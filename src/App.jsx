@@ -762,12 +762,19 @@ function App() {
   const handleDelete = async (id) => {
     const target = inventory.find((item) => item.id === id);
     const label = target ? `"${target.title}" by ${target.artist}` : 'this painting';
-    const shouldDelete = window.confirm(`Delete ${label}? This action cannot be undone.`);
+    const isSuperAdmin = session?.role === 'super admin';
+    const confirmMessage = isSuperAdmin
+      ? `Delete ${label}? This will permanently remove the item.`
+      : `Delete ${label}? This will mark the item as inactive.`;
+    const shouldDelete = window.confirm(confirmMessage);
     if (!shouldDelete) return;
 
     try {
       const response = await fetch(`${API_BASE}/artworks/${id}`, {
         method: 'DELETE',
+        headers: {
+          'x-actor-role': session?.role || '',
+        },
       });
       if (!response.ok && response.status !== 204) {
         throw new Error('Failed to delete artwork');
