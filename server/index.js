@@ -1,9 +1,11 @@
 import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
+import bcrypt from 'bcryptjs'
 import mongoose from 'mongoose'
 import artworksRouter from './routes/artworks.js'
 import User from './models/User.js'
+import auditLogsRouter from './routes/auditLogs.js'
 import usersRouter from './routes/users.js'
 
 dotenv.config()
@@ -31,6 +33,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/artworks', artworksRouter)
 app.use('/api/users', usersRouter)
+app.use('/api/audit-logs', auditLogsRouter)
 
 if (!MONGODB_URI) {
   console.error('Missing MONGODB_URI in environment variables.')
@@ -65,10 +68,11 @@ mongoose
     ]
 
     for (const user of defaults) {
+      const hashedPassword = await bcrypt.hash(user.password, 10)
       // Upsert default accounts so first run always has login users.
       await User.updateOne(
         { email: user.email },
-        { $setOnInsert: user },
+        { $setOnInsert: { ...user, password: hashedPassword } },
         { upsert: true },
       )
     }

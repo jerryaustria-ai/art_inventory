@@ -1,10 +1,30 @@
 import express from 'express';
+import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
 import User from '../models/User.js';
 import { sendLoginNotification } from '../utils/mailer.js';
+import { writeAuditLog } from '../utils/audit.js';
 
 const router = express.Router();
+const BCRYPT_ROUNDS = 10;
 
-router.post('/login', async (req, res) => {
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many login attempts. Please try again in 15 minutes.' },
+});
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many password reset attempts. Please try again in 15 minutes.' },
+});
+
+router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body || {};
 
   if (!email || !password) {
@@ -13,9 +33,25 @@ router.post('/login', async (req, res) => {
 
   try {
     const user = await User.findOne({ email: email.toLowerCase().trim() });
-    if (!user || user.password !== password) {
+    if (!user) {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
+
+    let isValidPassword = false;
+
+    if (typeof user.password === 'string' && user.password.startsWith('$2')) {
+      isValidPassword = await bcrypt.compare(password, user.password);
+    } else if (user.password === password) {
+      // Migrate legacy plaintext password to bcrypt hash on successful login.
+      isValidPassword = true;
+      user.password = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      await user.save();
+    }
+
+    if (!isValidPassword) {
+      return res.status(401).json({ message: 'Invalid credentials.' });
+    }
+
     if (user.status === 'inactive') {
       return res.status(403).json({ message: 'Your account is inactive.' });
     }
@@ -42,6 +78,24 @@ router.post('/login', async (req, res) => {
         console.error('Login notification email failed:', error?.message || error);
     });
 
+    await writeAuditLog({
+      action: 'user.login',
+      actor: {
+        id: String(user._id),
+        email: user.email,
+        role: user.role,
+      },
+      target: {
+        type: 'user',
+        id: String(user._id),
+        label: user.email,
+      },
+      metadata: {
+        ip: req.ip || '',
+        userAgent: req.get('user-agent') || '',
+      },
+    });
+
     return res.json({
       id: user._id,
       name: user.name,
@@ -54,7 +108,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   const { email, newPassword } = req.body || {};
 
   if (!email || !newPassword) {
@@ -67,7 +121,7 @@ router.post('/forgot-password', async (req, res) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
-    user.password = newPassword;
+    user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await user.save();
 
     return res.json({ message: 'Password has been reset successfully.' });
@@ -101,7 +155,7 @@ router.post('/', async (req, res) => {
     const created = await User.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),
-      password,
+      password: await bcrypt.hash(password, BCRYPT_ROUNDS),
       role,
       status,
     });
@@ -150,7 +204,7 @@ router.put('/:id', async (req, res) => {
     };
 
     if (password && password.trim()) {
-      updatePayload.password = password;
+      updatePayload.password = await bcrypt.hash(password, BCRYPT_ROUNDS);
     }
 
     const updated = await User.findByIdAndUpdate(req.params.id, updatePayload, {

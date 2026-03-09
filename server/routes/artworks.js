@@ -1,5 +1,6 @@
 import express from 'express';
 import Artwork from '../models/Artwork.js';
+import { readActorFromRequest, writeAuditLog } from '../utils/audit.js';
 
 const router = express.Router();
 
@@ -42,6 +43,7 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
+    const actor = readActorFromRequest(req);
     const deactivated = await Artwork.findByIdAndUpdate(
       req.params.id,
       { isActive: false },
@@ -50,6 +52,21 @@ router.delete('/:id', async (req, res) => {
     if (!deactivated) {
       return res.status(404).json({ message: 'Artwork not found' });
     }
+
+    await writeAuditLog({
+      action: 'inventory.deactivate',
+      actor,
+      target: {
+        type: 'artwork',
+        id: String(deactivated._id),
+        label: deactivated.title || '',
+      },
+      metadata: {
+        category: deactivated.category || '',
+        place: deactivated.place || '',
+      },
+    });
+
     return res.json({ message: 'Artwork marked as inactive.' });
   } catch {
     res.status(400).json({ message: 'Failed to delete artwork' });
@@ -58,7 +75,8 @@ router.delete('/:id', async (req, res) => {
 
 router.delete('/:id/permanent', async (req, res) => {
   try {
-    const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
+    const actor = readActorFromRequest(req);
+    const actorRole = actor.role;
     if (actorRole !== 'super admin') {
       return res.status(403).json({ message: 'Only super admin can permanently delete artwork.' });
     }
@@ -67,6 +85,21 @@ router.delete('/:id/permanent', async (req, res) => {
     if (!deleted) {
       return res.status(404).json({ message: 'Artwork not found' });
     }
+
+    await writeAuditLog({
+      action: 'inventory.delete_permanent',
+      actor,
+      target: {
+        type: 'artwork',
+        id: String(deleted._id),
+        label: deleted.title || '',
+      },
+      metadata: {
+        category: deleted.category || '',
+        place: deleted.place || '',
+      },
+    });
+
     return res.status(204).send();
   } catch {
     return res.status(400).json({ message: 'Failed to permanently delete artwork' });
@@ -75,7 +108,8 @@ router.delete('/:id/permanent', async (req, res) => {
 
 router.patch('/:id/activate', async (req, res) => {
   try {
-    const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
+    const actor = readActorFromRequest(req);
+    const actorRole = actor.role;
     if (actorRole !== 'super admin') {
       return res.status(403).json({ message: 'Only super admin can activate artwork.' });
     }
@@ -88,6 +122,21 @@ router.patch('/:id/activate', async (req, res) => {
     if (!activated) {
       return res.status(404).json({ message: 'Artwork not found' });
     }
+
+    await writeAuditLog({
+      action: 'inventory.activate',
+      actor,
+      target: {
+        type: 'artwork',
+        id: String(activated._id),
+        label: activated.title || '',
+      },
+      metadata: {
+        category: activated.category || '',
+        place: activated.place || '',
+      },
+    });
+
     return res.json(activated);
   } catch {
     return res.status(400).json({ message: 'Failed to activate artwork' });

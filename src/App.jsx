@@ -68,6 +68,20 @@ const blankUserForm = {
   status: 'active',
 };
 
+function formatDateTime(value) {
+  if (!value) return 'N/A';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'N/A';
+  return parsed.toLocaleString('en-PH', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 function InventoryForm({ onSubmit, editingItem, onCancel }) {
   const [form, setForm] = useState(editingItem || blankForm);
   const [formError, setFormError] = useState('');
@@ -441,6 +455,9 @@ function App() {
   const [inventory, setInventory] = useState([]);
   const [users, setUsers] = useState([]);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [isAuditLoading, setIsAuditLoading] = useState(false);
+  const [auditActionFilter, setAuditActionFilter] = useState('all');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -571,6 +588,35 @@ function App() {
       setApiError('Failed to load users.');
     } finally {
       setIsUsersLoading(false);
+    }
+  };
+
+  const fetchAuditLogs = async (action = auditActionFilter) => {
+    if (session?.role !== 'super admin') return;
+
+    setIsAuditLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: '100' });
+      if (action && action !== 'all') {
+        params.set('action', action);
+      }
+
+      const response = await fetch(`${API_BASE}/audit-logs?${params.toString()}`, {
+        headers: {
+          'x-actor-role': session?.role || '',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch audit logs');
+      }
+
+      const data = await response.json();
+      setAuditLogs(Array.isArray(data) ? data : []);
+      setApiError('');
+    } catch {
+      setApiError('Failed to load audit logs.');
+    } finally {
+      setIsAuditLoading(false);
     }
   };
 
@@ -785,6 +831,8 @@ function App() {
       const response = await fetch(`${API_BASE}/artworks/${id}`, {
         method: 'DELETE',
         headers: {
+          'x-actor-id': session?.id || '',
+          'x-actor-email': session?.email || '',
           'x-actor-role': session?.role || '',
         },
       });
@@ -819,6 +867,8 @@ function App() {
       const response = await fetch(`${API_BASE}/artworks/${id}/permanent`, {
         method: 'DELETE',
         headers: {
+          'x-actor-id': session?.id || '',
+          'x-actor-email': session?.email || '',
           'x-actor-role': session?.role || '',
         },
       });
@@ -844,6 +894,8 @@ function App() {
       const response = await fetch(`${API_BASE}/artworks/${id}/activate`, {
         method: 'PATCH',
         headers: {
+          'x-actor-id': session?.id || '',
+          'x-actor-email': session?.email || '',
           'x-actor-role': session?.role || '',
         },
       });
@@ -1051,6 +1103,7 @@ function App() {
                 onClick={() => {
                   setCurrentPage('admin');
                   fetchUsers();
+                  fetchAuditLogs(auditActionFilter);
                 }}
               >
                 Admin Page
@@ -1108,6 +1161,7 @@ function App() {
                       setCurrentPage('admin');
                       setIsMobileMenuOpen(false);
                       fetchUsers();
+                      fetchAuditLogs(auditActionFilter);
                     }}
                   >
                     Admin Page
@@ -1572,48 +1626,106 @@ function App() {
       ) : null}
 
       {currentPage === 'admin' && canOpenAdminPage ? (
-        <section className="panel controls">
-          <div className="heading-row">
-            <h2>User Management</h2>
-            <button type="button" onClick={openAddUserModal}>
-              Add User
-            </button>
-          </div>
-          {isUsersLoading ? <p className="muted">Loading users...</p> : null}
-          <div className="user-list">
-            {users.length === 0 ? <p>No users found.</p> : null}
-            {users.map((user) => (
-              <article className="user-item" key={user.id}>
-                <div>
-                  <strong>{user.name}</strong>
-                  <p className="muted">{user.email}</p>
-                  <p>
-                    <strong>Role:</strong> {user.role}
-                  </p>
-                  <p>
-                    <strong>Status:</strong> {user.status}
-                  </p>
-                </div>
-                <div className="actions">
-                  <button
-                    type="button"
-                    onClick={() => openEditUserModal(user.id)}
-                    disabled={user.role === 'super admin' && session?.role !== 'super admin'}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={() => handleDeleteUser(user.id)}
-                    disabled={user.role === 'super admin' && session?.role !== 'super admin'}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
+        <section className="controls">
+          <article className="panel controls">
+            <div className="heading-row">
+              <h2>User Management</h2>
+              <button type="button" onClick={openAddUserModal}>
+                Add User
+              </button>
+            </div>
+            {isUsersLoading ? <p className="muted">Loading users...</p> : null}
+            <div className="user-list">
+              {users.length === 0 ? <p>No users found.</p> : null}
+              {users.map((user) => (
+                <article className="user-item" key={user.id}>
+                  <div>
+                    <strong>{user.name}</strong>
+                    <p className="muted">{user.email}</p>
+                    <p>
+                      <strong>Role:</strong> {user.role}
+                    </p>
+                    <p>
+                      <strong>Status:</strong> {user.status}
+                    </p>
+                  </div>
+                  <div className="actions">
+                    <button
+                      type="button"
+                      onClick={() => openEditUserModal(user.id)}
+                      disabled={user.role === 'super admin' && session?.role !== 'super admin'}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => handleDeleteUser(user.id)}
+                      disabled={user.role === 'super admin' && session?.role !== 'super admin'}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel controls">
+            <div className="heading-row">
+              <h2>Audit Logs</h2>
+              <div className="actions">
+                <select
+                  value={auditActionFilter}
+                  onChange={(event) => {
+                    const nextAction = event.target.value;
+                    setAuditActionFilter(nextAction);
+                    fetchAuditLogs(nextAction);
+                  }}
+                >
+                  <option value="all">All Actions</option>
+                  <option value="user.login">User Login</option>
+                  <option value="inventory.deactivate">Inventory Deactivate</option>
+                  <option value="inventory.activate">Inventory Activate</option>
+                  <option value="inventory.delete_permanent">Inventory Permanent Delete</option>
+                </select>
+                <button type="button" className="ghost" onClick={() => fetchAuditLogs(auditActionFilter)}>
+                  Refresh
+                </button>
+              </div>
+            </div>
+            {isAuditLoading ? <p className="muted">Loading audit logs...</p> : null}
+            <div className="audit-table-wrap">
+              <table className="audit-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>Actor</th>
+                    <th>Target</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="muted">
+                        No audit logs found.
+                      </td>
+                    </tr>
+                  ) : (
+                    auditLogs.map((log) => (
+                      <tr key={log._id}>
+                        <td>{formatDateTime(log.createdAt)}</td>
+                        <td>{log.action || 'N/A'}</td>
+                        <td>{log.actor?.email || log.actor?.id || 'N/A'}</td>
+                        <td>{log.target?.label || log.target?.id || 'N/A'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </article>
         </section>
       ) : null}
 

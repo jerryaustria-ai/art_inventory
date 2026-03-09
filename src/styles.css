@@ -329,6 +329,34 @@ button.danger {
   gap: 0.75rem;
 }
 
+.audit-table-wrap {
+  overflow: auto;
+  border: 1px solid #d8e0e1;
+  border-radius: 12px;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+  background: #ffffff;
+}
+
+.audit-table th,
+.audit-table td {
+  text-align: left;
+  border-bottom: 1px solid #e4ecee;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.9rem;
+  vertical-align: top;
+}
+
+.audit-table th {
+  background: #f4f8f9;
+  color: #314244;
+  font-weight: 700;
+}
+
 .card {
   position: relative;
   border: 1px solid #d5dfe1;
