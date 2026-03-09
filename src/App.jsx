@@ -548,6 +548,19 @@ function App() {
     return Array.isArray(data) ? data.map(normalizeArtwork) : [];
   };
 
+  const fetchInventoryItemById = async (itemId, activeSession = session) => {
+    const response = await fetch(`${API_BASE}/artworks/${itemId}`, {
+      headers: {
+        'x-actor-role': activeSession?.role || '',
+      },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch inventory item');
+    }
+    const data = await response.json();
+    return normalizeArtwork(data);
+  };
+
   useEffect(() => {
     if (!selectedItem) {
       setDetailsQr('');
@@ -606,11 +619,29 @@ function App() {
     if (!inventory.length) return;
 
     const targetExists = inventory.some((item) => item.id === pendingItemId);
-    if (!targetExists) return;
+    if (targetExists) {
+      setSelectedId(pendingItemId);
+      setPendingItemId('');
+      return;
+    }
 
-    setSelectedId(pendingItemId);
-    setPendingItemId('');
-  }, [inventory, pendingItemId, selectedId]);
+    const tryFetchPending = async () => {
+      try {
+        const fetchedItem = await fetchInventoryItemById(pendingItemId, session);
+        setInventory((previous) => {
+          if (previous.some((item) => item.id === fetchedItem.id)) return previous;
+          return [fetchedItem, ...previous];
+        });
+        setSelectedId(fetchedItem.id);
+        setPendingItemId('');
+      } catch {
+        setApiError('Linked item not found or not accessible for your account.');
+        setPendingItemId('');
+      }
+    };
+
+    tryFetchPending();
+  }, [inventory, pendingItemId, selectedId, session]);
 
   const fetchUsers = async () => {
     setIsUsersLoading(true);
@@ -720,6 +751,7 @@ function App() {
 
       setSession(nextSession);
       setCurrentPage('inventory');
+      setPendingItemId(readItemIdFromUrl());
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextSession));
       setIsLoading(true);
       setApiError('');

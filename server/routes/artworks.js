@@ -17,6 +17,22 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get('/:id', async (req, res) => {
+  try {
+    const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
+    const item = await Artwork.findById(req.params.id);
+    if (!item) {
+      return res.status(404).json({ message: 'Artwork not found' });
+    }
+    if (item.isActive === false && actorRole !== 'super admin') {
+      return res.status(404).json({ message: 'Artwork not found' });
+    }
+    return res.json(item);
+  } catch {
+    return res.status(400).json({ message: 'Failed to fetch artwork' });
+  }
+});
+
 router.post('/', async (req, res) => {
   try {
     const artwork = await Artwork.create(req.body);
