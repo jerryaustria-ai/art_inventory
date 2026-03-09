@@ -1299,22 +1299,65 @@ function App() {
     setQrScanError('');
     try {
       const bitmap = await createImageBitmap(file);
-      const canvas = document.createElement('canvas');
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      const context = canvas.getContext('2d');
-      if (!context) {
-        throw new Error('Canvas unavailable');
+
+      const detectFromCanvas = (canvas) => {
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) return null;
+
+        const scales = [1, 0.75, 0.5, 0.35];
+        const inversionModes = ['attemptBoth', 'dontInvert', 'onlyInvert'];
+
+        for (const scale of scales) {
+          const targetWidth = Math.max(120, Math.floor(canvas.width * scale));
+          const targetHeight = Math.max(120, Math.floor(canvas.height * scale));
+          const passCanvas = document.createElement('canvas');
+          passCanvas.width = targetWidth;
+          passCanvas.height = targetHeight;
+          const passContext = passCanvas.getContext('2d', { willReadFrequently: true });
+          if (!passContext) continue;
+          passContext.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+          const imageData = passContext.getImageData(0, 0, targetWidth, targetHeight);
+
+          for (const inversionAttempts of inversionModes) {
+            const result = jsQR(imageData.data, targetWidth, targetHeight, { inversionAttempts });
+            if (result?.data) {
+              return result.data;
+            }
+          }
+        }
+
+        return null;
+      };
+
+      const baseCanvas = document.createElement('canvas');
+      baseCanvas.width = bitmap.width;
+      baseCanvas.height = bitmap.height;
+      const baseContext = baseCanvas.getContext('2d');
+      if (!baseContext) throw new Error('Canvas unavailable');
+      baseContext.drawImage(bitmap, 0, 0);
+
+      let decodedValue = detectFromCanvas(baseCanvas);
+
+      if (!decodedValue) {
+        // Fallback for images with orientation issues: try rotated pass.
+        const rotatedCanvas = document.createElement('canvas');
+        rotatedCanvas.width = bitmap.height;
+        rotatedCanvas.height = bitmap.width;
+        const rotatedContext = rotatedCanvas.getContext('2d');
+        if (rotatedContext) {
+          rotatedContext.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
+          rotatedContext.rotate(Math.PI / 2);
+          rotatedContext.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+          decodedValue = detectFromCanvas(rotatedCanvas);
+        }
       }
 
-      context.drawImage(bitmap, 0, 0);
-      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-      const result = jsQR(imageData.data, imageData.width, imageData.height);
-      if (!result?.data) {
-        setQrScanError('No QR code found in image. Please try again.');
+      if (!decodedValue) {
+        setQrScanError('No QR code found in image. Please try a clearer/closer photo.');
         return;
       }
-      handleScannedQr(result.data);
+
+      handleScannedQr(decodedValue);
     } catch {
       setQrScanError('Unable to scan this photo. Please try a clearer QR image.');
     } finally {
