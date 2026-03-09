@@ -37,13 +37,25 @@ export async function sendLoginNotification({ to, name, role }) {
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
 
   if (!transporter || !from || !to) {
-    return;
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'Missing SMTP configuration or recipient.',
+    };
   }
 
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from,
     to,
     subject: 'Login Notification - Art Inventory',
     text: `Hello ${name || 'User'}, your account (${role}) just logged in to Art Inventory.`,
   });
+
+  return {
+    ok: true,
+    skipped: false,
+    messageId: info?.messageId || '',
+    accepted: Array.isArray(info?.accepted) ? info.accepted : [],
+    rejected: Array.isArray(info?.rejected) ? info.rejected : [],
+  };
 }

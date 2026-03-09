@@ -25,8 +25,21 @@ router.post('/login', async (req, res) => {
       to: user.email,
       name: user.name,
       role: user.role,
-    }).catch((error) => {
-      console.error('Login notification email failed:', error?.message || error);
+    })
+      .then((result) => {
+        if (!result) return;
+        if (result.ok) {
+          console.log(
+            `Login notification sent to ${user.email}. accepted=${result.accepted?.length || 0} rejected=${result.rejected?.length || 0}`
+          );
+          return;
+        }
+        if (result.skipped) {
+          console.warn(`Login notification skipped for ${user.email}: ${result.reason}`);
+        }
+      })
+      .catch((error) => {
+        console.error('Login notification email failed:', error?.message || error);
     });
 
     return res.json({
