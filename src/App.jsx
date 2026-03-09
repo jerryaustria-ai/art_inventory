@@ -44,6 +44,7 @@ function normalizeArtwork(item) {
     category: item.category || '',
     place: item.place || '',
     storageLocation: item.storageLocation || '',
+    isActive: item.isActive !== false,
   };
 }
 
@@ -459,6 +460,7 @@ function App() {
   const [isSculptureTotalsOpen, setIsSculptureTotalsOpen] = useState(false);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [viewerId, setViewerId] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [imageZoom, setImageZoom] = useState(1);
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
   const panStartRef = useRef({ x: 0, y: 0 });
@@ -472,6 +474,21 @@ function App() {
   const editingUser = users.find((user) => user.id === editingUserId) || null;
   const selectedItem = inventory.find((item) => item.id === selectedId) || null;
   const viewerItem = inventory.find((item) => item.id === viewerId) || null;
+
+  const fetchInventory = async (activeSession = session) => {
+    const isSuperAdmin = activeSession?.role === 'super admin';
+    const url = isSuperAdmin ? `${API_BASE}/artworks?includeInactive=true` : `${API_BASE}/artworks`;
+    const response = await fetch(url, {
+      headers: {
+        'x-actor-role': activeSession?.role || '',
+      },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch inventory');
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data.map(normalizeArtwork) : [];
+  };
 
   useEffect(() => {
     if (!selectedItem) {
@@ -512,13 +529,9 @@ function App() {
 
     const loadInventory = async () => {
       try {
-        const response = await fetch(`${API_BASE}/artworks`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch inventory');
-        }
-        const data = await response.json();
+        const data = await fetchInventory(session);
         if (!isMounted) return;
-        setInventory(Array.isArray(data) ? data.map(normalizeArtwork) : []);
+        setInventory(data);
         setApiError('');
       } catch {
         if (!isMounted) return;
@@ -599,6 +612,7 @@ function App() {
   const handleLogout = () => {
     setSession(null);
     setCurrentPage('inventory');
+    setIsMobileMenuOpen(false);
     localStorage.removeItem(AUTH_STORAGE_KEY);
     setEditingId('');
     setSelectedId('');
@@ -743,6 +757,7 @@ function App() {
   const handleAddNew = () => {
     setEditingId('');
     setIsFormOpen(true);
+    setIsMobileMenuOpen(false);
   };
 
   const handleEdit = (id) => {
@@ -762,10 +777,7 @@ function App() {
   const handleDelete = async (id) => {
     const target = inventory.find((item) => item.id === id);
     const label = target ? `"${target.title}" by ${target.artist}` : 'this painting';
-    const isSuperAdmin = session?.role === 'super admin';
-    const confirmMessage = isSuperAdmin
-      ? `Delete ${label}? This will permanently remove the item.`
-      : `Delete ${label}? This will mark the item as inactive.`;
+    const confirmMessage = `Delete ${label}? This will mark the item as inactive.`;
     const shouldDelete = window.confirm(confirmMessage);
     if (!shouldDelete) return;
 
@@ -779,7 +791,11 @@ function App() {
       if (!response.ok && response.status !== 204) {
         throw new Error('Failed to delete artwork');
       }
-      setInventory((previous) => previous.filter((item) => item.id !== id));
+      setInventory((previous) =>
+        session?.role === 'super admin'
+          ? previous.map((item) => (item.id === id ? { ...item, isActive: false } : item))
+          : previous.filter((item) => item.id !== id)
+      );
       if (editingId === id) setEditingId('');
       if (selectedId === id) setSelectedId('');
       if (returnDetailsId === id) setReturnDetailsId('');
@@ -790,6 +806,58 @@ function App() {
       setApiError('');
     } catch {
       setApiError('Failed to delete item. Please try again.');
+    }
+  };
+
+  const handlePermanentDelete = async (id) => {
+    const target = inventory.find((item) => item.id === id);
+    const label = target ? `"${target.title}" by ${target.artist}` : 'this painting';
+    const shouldDelete = window.confirm(`Permanently delete ${label}? This action cannot be undone.`);
+    if (!shouldDelete) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/artworks/${id}/permanent`, {
+        method: 'DELETE',
+        headers: {
+          'x-actor-role': session?.role || '',
+        },
+      });
+      if (!response.ok && response.status !== 204) {
+        throw new Error('Failed to permanently delete artwork');
+      }
+      setInventory((previous) => previous.filter((item) => item.id !== id));
+      if (editingId === id) setEditingId('');
+      if (selectedId === id) setSelectedId('');
+      if (returnDetailsId === id) setReturnDetailsId('');
+      if (viewerId === id) {
+        setViewerId('');
+        setIsImageViewerOpen(false);
+      }
+      setApiError('');
+    } catch {
+      setApiError('Failed to permanently delete item. Please try again.');
+    }
+  };
+
+  const handleActivate = async (id) => {
+    try {
+      const response = await fetch(`${API_BASE}/artworks/${id}/activate`, {
+        method: 'PATCH',
+        headers: {
+          'x-actor-role': session?.role || '',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to activate artwork');
+      }
+      const updated = normalizeArtwork(await response.json());
+      setInventory((previous) => previous.map((item) => (item.id === updated.id ? updated : item)));
+      if (selectedId === id) {
+        setSelectedId(updated.id);
+      }
+      setApiError('');
+    } catch {
+      setApiError('Failed to activate item. Please try again.');
     }
   };
 
@@ -968,7 +1036,7 @@ function App() {
       <header>
         <div className="header-row stacked-mobile">
           <h1>Art and Painting Inventory</h1>
-          <div className="actions">
+          <div className="actions desktop-nav-actions">
             <button
               type="button"
               className={currentPage === 'inventory' ? '' : 'ghost'}
@@ -991,6 +1059,65 @@ function App() {
             <button type="button" className="ghost" onClick={handleLogout}>
               Logout
             </button>
+          </div>
+          <div className="mobile-menu-container">
+            <button
+              type="button"
+              className="hamburger-btn"
+              aria-label="Open menu"
+              onClick={() => setIsMobileMenuOpen((previous) => !previous)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M4 7h16M4 12h16M4 17h16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+            {isMobileMenuOpen ? (
+              <div className="mobile-menu-panel">
+                <button
+                  type="button"
+                  className={currentPage === 'inventory' ? '' : 'ghost'}
+                  onClick={() => {
+                    setCurrentPage('inventory');
+                    setIsMobileMenuOpen(false);
+                  }}
+                >
+                  Inventory
+                </button>
+                {canManage ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentPage('inventory');
+                      handleAddNew();
+                    }}
+                  >
+                    Add New Item
+                  </button>
+                ) : null}
+                {canOpenAdminPage ? (
+                  <button
+                    type="button"
+                    className={currentPage === 'admin' ? '' : 'ghost'}
+                    onClick={() => {
+                      setCurrentPage('admin');
+                      setIsMobileMenuOpen(false);
+                      fetchUsers();
+                    }}
+                  >
+                    Admin Page
+                  </button>
+                ) : null}
+                <button type="button" className="ghost" onClick={handleLogout}>
+                  Logout
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
         <p>Manage your collection, track status, and keep all details in one place.</p>
@@ -1038,7 +1165,7 @@ function App() {
         <div className="heading-row">
           <h2>Inventory</h2>
           {canManage ? (
-            <button type="button" onClick={handleAddNew}>
+            <button type="button" className="inventory-add-btn" onClick={handleAddNew}>
               Add New Item
             </button>
           ) : null}
@@ -1132,7 +1259,10 @@ function App() {
         <div className="card-grid">
           {filteredInventory.length === 0 ? <p>No paintings match your filters.</p> : null}
           {filteredInventory.map((item) => (
-            <article className={`card ${displayMode === 'image' ? 'picture-only' : ''}`} key={item.id}>
+            <article
+              className={`card ${displayMode === 'image' ? 'picture-only' : ''} ${item.isActive ? '' : 'inactive-card'}`}
+              key={item.id}
+            >
               <button type="button" className="card-media-btn" onClick={() => handleOpenImageViewer(item.id)}>
                 {item.imageUrl ? (
                   <img src={item.imageUrl} alt={item.title} />
@@ -1140,6 +1270,7 @@ function App() {
                   <div className="placeholder">No Image</div>
                 )}
               </button>
+              {!item.isActive ? <span className="inactive-badge">Inactive</span> : null}
               {displayMode === 'image' ? (
                 <button type="button" className="picture-title-btn" onClick={() => setSelectedId(item.id)}>
                   {item.title}
@@ -1163,6 +1294,7 @@ function App() {
                   <p>
                     <strong>Status:</strong> {item.status}
                   </p>
+                  {!item.isActive ? <p className="inactive-label">Inventory State: Inactive</p> : null}
                   <p>
                     <strong>Place:</strong> {item.place || 'Not set'}
                   </p>
@@ -1178,12 +1310,26 @@ function App() {
               <div className="actions card-actions">
                 {canManage ? (
                   <>
-                    <button type="button" onClick={() => handleEdit(item.id)}>
-                      Edit
-                    </button>
-                    <button type="button" className="danger" onClick={() => handleDelete(item.id)}>
-                      Delete
-                    </button>
+                    {item.isActive ? (
+                      <>
+                        <button type="button" onClick={() => handleEdit(item.id)}>
+                          Edit
+                        </button>
+                        <button type="button" className="danger" onClick={() => handleDelete(item.id)}>
+                          Delete
+                        </button>
+                      </>
+                    ) : null}
+                    {session?.role === 'super admin' && !item.isActive ? (
+                      <>
+                        <button type="button" onClick={() => handleActivate(item.id)}>
+                          Activate
+                        </button>
+                        <button type="button" className="danger" onClick={() => handlePermanentDelete(item.id)}>
+                          Delete Permanently
+                        </button>
+                      </>
+                    ) : null}
                   </>
                 ) : null}
               </div>
@@ -1304,6 +1450,9 @@ function App() {
                 <strong>Status:</strong> {selectedItem.status}
               </p>
               <p>
+                <strong>Inventory State:</strong> {selectedItem.isActive ? 'Active' : 'Inactive'}
+              </p>
+              <p>
                 <strong>Place:</strong> {selectedItem.place || 'Not set'}
               </p>
               <p>
@@ -1327,20 +1476,34 @@ function App() {
             <div className="actions">
               {canManage ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReturnDetailsId(selectedItem.id);
-                      setEditingId(selectedItem.id);
-                      setIsFormOpen(true);
-                      setSelectedId('');
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button type="button" className="danger" onClick={() => handleDelete(selectedItem.id)}>
-                    Delete
-                  </button>
+                  {selectedItem.isActive ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReturnDetailsId(selectedItem.id);
+                          setEditingId(selectedItem.id);
+                          setIsFormOpen(true);
+                          setSelectedId('');
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button type="button" className="danger" onClick={() => handleDelete(selectedItem.id)}>
+                        Delete
+                      </button>
+                    </>
+                  ) : null}
+                  {session?.role === 'super admin' && !selectedItem.isActive ? (
+                    <>
+                      <button type="button" onClick={() => handleActivate(selectedItem.id)}>
+                        Activate
+                      </button>
+                      <button type="button" className="danger" onClick={() => handlePermanentDelete(selectedItem.id)}>
+                        Delete Permanently
+                      </button>
+                    </>
+                  ) : null}
                 </>
               ) : null}
               <button type="button" className="ghost" onClick={() => setSelectedId('')}>

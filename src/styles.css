@@ -74,6 +74,49 @@ header p {
   gap: 0.75rem;
 }
 
+.mobile-menu-container {
+  display: none;
+  position: relative;
+}
+
+.hamburger-btn {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #1f2a2b;
+  border: 1px solid #c9d3d4;
+  border-radius: 10px;
+  padding: 0;
+}
+
+.hamburger-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.mobile-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 30;
+  width: 200px;
+  border: 1px solid #d8e0e1;
+  border-radius: 12px;
+  padding: 0.55rem;
+  background: #ffffff;
+  box-shadow: 0 10px 22px rgba(16, 32, 36, 0.14);
+  display: grid;
+  gap: 0.45rem;
+}
+
+.mobile-menu-panel button {
+  width: 100%;
+  text-align: left;
+}
+
 .stacked-mobile {
   flex-wrap: wrap;
 }
@@ -286,12 +329,18 @@ button.danger {
 }
 
 .card {
+  position: relative;
   border: 1px solid #d5dfe1;
   border-radius: 14px;
   overflow: hidden;
   background: #fff;
   display: grid;
   grid-template-rows: 180px 1fr auto;
+}
+
+.inactive-card {
+  background: #f7f9fa;
+  border-color: #c3cdcf;
 }
 
 .card-media-btn {
@@ -345,6 +394,19 @@ button.danger {
 
 .card.picture-only .card-actions button {
   box-shadow: 0 4px 10px rgba(16, 32, 36, 0.25);
+}
+
+.inactive-badge {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  z-index: 2;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: rgba(180, 35, 24, 0.92);
+  color: #ffffff;
 }
 
 .picture-title-btn {
@@ -488,6 +550,11 @@ button.danger {
   font-size: 0.9rem;
 }
 
+.inactive-label {
+  color: #b42318;
+  font-weight: 600;
+}
+
 .image-preview-block {
   display: flex;
   align-items: flex-start;
@@ -619,6 +686,15 @@ button.danger {
   .heading-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .desktop-nav-actions,
+  .inventory-add-btn {
+    display: none;
+  }
+
+  .mobile-menu-container {
+    display: block;
   }
 
   .user-item {
