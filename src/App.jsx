@@ -1298,7 +1298,27 @@ function App() {
     setIsQrPhotoScanning(true);
     setQrScanError('');
     try {
-      const bitmap = await createImageBitmap(file);
+      const loadImageElement = () =>
+        new Promise((resolve, reject) => {
+          const objectUrl = URL.createObjectURL(file);
+          const image = new Image();
+          image.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve(image);
+          };
+          image.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('Failed to load image'));
+          };
+          image.src = objectUrl;
+        });
+
+      const loadedImage = await loadImageElement();
+      const sourceWidth = Number(loadedImage.naturalWidth || loadedImage.width || 0);
+      const sourceHeight = Number(loadedImage.naturalHeight || loadedImage.height || 0);
+      if (!sourceWidth || !sourceHeight) {
+        throw new Error('Invalid image size');
+      }
 
       const detectFromCanvas = (canvas) => {
         const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -1330,30 +1350,30 @@ function App() {
       };
 
       const baseCanvas = document.createElement('canvas');
-      baseCanvas.width = bitmap.width;
-      baseCanvas.height = bitmap.height;
+      baseCanvas.width = sourceWidth;
+      baseCanvas.height = sourceHeight;
       const baseContext = baseCanvas.getContext('2d');
       if (!baseContext) throw new Error('Canvas unavailable');
-      baseContext.drawImage(bitmap, 0, 0);
+      baseContext.drawImage(loadedImage, 0, 0, sourceWidth, sourceHeight);
 
       let decodedValue = detectFromCanvas(baseCanvas);
 
       if (!decodedValue) {
         // Fallback for images with orientation issues: try rotated pass.
         const rotatedCanvas = document.createElement('canvas');
-        rotatedCanvas.width = bitmap.height;
-        rotatedCanvas.height = bitmap.width;
+        rotatedCanvas.width = sourceHeight;
+        rotatedCanvas.height = sourceWidth;
         const rotatedContext = rotatedCanvas.getContext('2d');
         if (rotatedContext) {
           rotatedContext.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
           rotatedContext.rotate(Math.PI / 2);
-          rotatedContext.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+          rotatedContext.drawImage(loadedImage, -sourceWidth / 2, -sourceHeight / 2);
           decodedValue = detectFromCanvas(rotatedCanvas);
         }
       }
 
       if (!decodedValue) {
-        setQrScanError('No QR code found in image. Please try a clearer/closer photo.');
+        setQrScanError('No QR code found in image. Try a closer shot and include only the QR code.');
         return;
       }
 
