@@ -60,6 +60,29 @@ function readAuthSession() {
   }
 }
 
+function readItemIdFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('item') || '';
+  } catch {
+    return '';
+  }
+}
+
+function updateItemIdInUrl(itemId) {
+  try {
+    const url = new URL(window.location.href);
+    if (itemId) {
+      url.searchParams.set('item', itemId);
+    } else {
+      url.searchParams.delete('item');
+    }
+    window.history.replaceState({}, '', url.toString());
+  } catch {
+    // Ignore URL sync errors in unsupported environments.
+  }
+}
+
 const blankUserForm = {
   name: '',
   email: '',
@@ -486,6 +509,7 @@ function App() {
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [viewerId, setViewerId] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [pendingItemId, setPendingItemId] = useState(readItemIdFromUrl);
   const [imageZoom, setImageZoom] = useState(1);
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
   const panStartRef = useRef({ x: 0, y: 0 });
@@ -521,19 +545,9 @@ function App() {
       return;
     }
 
-    const qrPayload = JSON.stringify({
-      title: selectedItem.title,
-      artist: selectedItem.artist,
-      year: selectedItem.year,
-      category: selectedItem.category,
-      medium: selectedItem.medium,
-      dimensions: selectedItem.dimensions,
-      status: selectedItem.status,
-      place: selectedItem.place,
-      storageLocation: selectedItem.storageLocation,
-      pricePhp: formatPhp(selectedItem.price),
-      notes: selectedItem.notes,
-    });
+    const qrPayload = `${window.location.origin}${window.location.pathname}?item=${encodeURIComponent(
+      selectedItem.id
+    )}`;
 
     QRCode.toDataURL(qrPayload, {
       width: 220,
@@ -572,6 +586,22 @@ function App() {
       isMounted = false;
     };
   }, [session]);
+
+  useEffect(() => {
+    updateItemIdInUrl(selectedId);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (selectedId) return;
+    if (!pendingItemId) return;
+    if (!inventory.length) return;
+
+    const targetExists = inventory.some((item) => item.id === pendingItemId);
+    if (!targetExists) return;
+
+    setSelectedId(pendingItemId);
+    setPendingItemId('');
+  }, [inventory, pendingItemId, selectedId]);
 
   const fetchUsers = async () => {
     setIsUsersLoading(true);
