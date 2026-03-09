@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
+import dns from 'dns/promises';
 
-function createTransporter() {
+async function createTransporter() {
   const host = process.env.SMTP_HOST;
   const port = Number(process.env.SMTP_PORT || 587);
   const user = process.env.SMTP_USER;
@@ -10,14 +11,20 @@ function createTransporter() {
     return null;
   }
 
+  // Render instances may fail on IPv6 routes; resolve SMTP host to IPv4 explicitly.
+  const lookup = await dns.lookup(host, { family: 4 });
+  const ipv4Host = lookup?.address || host;
+
   return nodemailer.createTransport({
-    host,
+    host: ipv4Host,
     port,
     secure: port === 465,
-    family: 4,
     connectionTimeout: 15000,
     greetingTimeout: 15000,
     socketTimeout: 20000,
+    tls: {
+      servername: host,
+    },
     auth: {
       user,
       pass,
@@ -26,7 +33,7 @@ function createTransporter() {
 }
 
 export async function sendLoginNotification({ to, name, role }) {
-  const transporter = createTransporter();
+  const transporter = await createTransporter();
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
 
   if (!transporter || !from || !to) {
