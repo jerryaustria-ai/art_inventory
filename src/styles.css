@@ -479,15 +479,26 @@ button.danger {
 .details-grid {
   display: grid;
   gap: 0.45rem;
+}
+
+.details-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: start;
   margin-bottom: 0.75rem;
 }
 
 .qr-block {
-  margin-bottom: 0.75rem;
+  min-width: 190px;
 }
 
 .qr-block h3 {
   margin-bottom: 0.5rem;
+}
+
+.qr-actions {
+  margin-top: 0.6rem;
 }
 
 .qr-image {
@@ -732,5 +743,13 @@ button.danger {
 
   .container {
     padding: 1rem 0.75rem 2rem;
+  }
+
+  .details-main {
+    grid-template-columns: 1fr;
+  }
+
+  .qr-block {
+    min-width: 0;
   }
 }

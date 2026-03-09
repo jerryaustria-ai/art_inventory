@@ -1120,6 +1120,94 @@ function App() {
     setImagePan({ x: 0, y: 0 });
   };
 
+  const handlePrintQr = () => {
+    if (!selectedItem || !detailsQr) {
+      setApiError('QR code is not ready yet. Please try again.');
+      return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=480,height=700');
+    if (!printWindow) {
+      setApiError('Unable to open print window. Please allow pop-ups and try again.');
+      return;
+    }
+
+    const safeTitle = String(selectedItem.title || 'Untitled Item')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+    const safeId = String(selectedItem.id || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Print QR - ${safeTitle}</title>
+          <style>
+            @page {
+              size: 4.25in 5.5in;
+              margin: 0.2in;
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              width: 100%;
+              height: 100%;
+              font-family: "Avenir Next", "Segoe UI", sans-serif;
+              color: #1f2a2b;
+            }
+            .sheet {
+              box-sizing: border-box;
+              width: 100%;
+              min-height: 100%;
+              border: 1px solid #d8e0e1;
+              border-radius: 10px;
+              padding: 0.25in;
+              display: grid;
+              justify-items: center;
+              align-content: start;
+              gap: 0.16in;
+            }
+            h1 {
+              margin: 0;
+              font-size: 18px;
+              text-align: center;
+              line-height: 1.2;
+            }
+            p {
+              margin: 0;
+              font-size: 12px;
+            }
+            .qr {
+              width: 2.5in;
+              height: 2.5in;
+              border: 1px solid #d8e0e1;
+              border-radius: 8px;
+            }
+          </style>
+        </head>
+        <body>
+          <section class="sheet">
+            <h1>${safeTitle}</h1>
+            <p><strong>Item ID:</strong> ${safeId}</p>
+            <img class="qr" src="${detailsQr}" alt="QR Code" />
+          </section>
+          <script>
+            window.onload = function () {
+              window.focus();
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const handleImagePointerDown = (event) => {
     if (imageZoom <= 1) return;
     isPanningRef.current = true;
@@ -1552,45 +1640,52 @@ function App() {
             ) : (
               <div className="details-image placeholder">No Image</div>
             )}
-            <div className="details-grid">
-              <p>
-                <strong>Year:</strong> {selectedItem.year || 'Not set'}
-              </p>
-              <p>
-                <strong>Category:</strong> {selectedItem.category || 'Not set'}
-              </p>
-              <p>
-                <strong>Medium:</strong> {selectedItem.medium || 'Not set'}
-              </p>
-              <p>
-                <strong>Dimensions:</strong> {selectedItem.dimensions || 'Not set'}
-              </p>
-              <p>
-                <strong>Status:</strong> {selectedItem.status}
-              </p>
-              <p>
-                <strong>Inventory State:</strong> {selectedItem.isActive ? 'Active' : 'Inactive'}
-              </p>
-              <p>
-                <strong>Place:</strong> {selectedItem.place || 'Not set'}
-              </p>
-              <p>
-                <strong>Storage Location:</strong> {selectedItem.storageLocation || 'Not set'}
-              </p>
-              <p>
-                <strong>Price:</strong> {formatPhp(selectedItem.price)}
-              </p>
-              <p>
-                <strong>Notes:</strong> {selectedItem.notes || 'None'}
-              </p>
-            </div>
-            <div className="qr-block">
-              <h3>QR Code</h3>
-              {detailsQr ? (
-                <img src={detailsQr} alt={`QR code for ${selectedItem.title}`} className="qr-image" />
-              ) : (
-                <p className="muted">Generating QR code...</p>
-              )}
+            <div className="details-main">
+              <div className="details-grid">
+                <p>
+                  <strong>Year:</strong> {selectedItem.year || 'Not set'}
+                </p>
+                <p>
+                  <strong>Category:</strong> {selectedItem.category || 'Not set'}
+                </p>
+                <p>
+                  <strong>Medium:</strong> {selectedItem.medium || 'Not set'}
+                </p>
+                <p>
+                  <strong>Dimensions:</strong> {selectedItem.dimensions || 'Not set'}
+                </p>
+                <p>
+                  <strong>Status:</strong> {selectedItem.status}
+                </p>
+                <p>
+                  <strong>Inventory State:</strong> {selectedItem.isActive ? 'Active' : 'Inactive'}
+                </p>
+                <p>
+                  <strong>Place:</strong> {selectedItem.place || 'Not set'}
+                </p>
+                <p>
+                  <strong>Storage Location:</strong> {selectedItem.storageLocation || 'Not set'}
+                </p>
+                <p>
+                  <strong>Price:</strong> {formatPhp(selectedItem.price)}
+                </p>
+                <p>
+                  <strong>Notes:</strong> {selectedItem.notes || 'None'}
+                </p>
+              </div>
+              <div className="qr-block">
+                <h3>QR Code</h3>
+                {detailsQr ? (
+                  <img src={detailsQr} alt={`QR code for ${selectedItem.title}`} className="qr-image" />
+                ) : (
+                  <p className="muted">Generating QR code...</p>
+                )}
+                <div className="actions qr-actions">
+                  <button type="button" onClick={handlePrintQr} disabled={!detailsQr}>
+                    Print QR
+                  </button>
+                </div>
+              </div>
             </div>
             <div className="actions">
               {canManage ? (
