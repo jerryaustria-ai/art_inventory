@@ -513,6 +513,7 @@ function App() {
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState('');
   const [isQrPhotoScanning, setIsQrPhotoScanning] = useState(false);
+  const [qrManualValue, setQrManualValue] = useState('');
   const [pendingItemId, setPendingItemId] = useState(readItemIdFromUrl);
   const [imageZoom, setImageZoom] = useState(1);
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
@@ -1294,6 +1295,7 @@ function App() {
     setIsQrScannerOpen(false);
     setQrScanError('');
     setIsQrPhotoScanning(false);
+    setQrManualValue('');
     stopQrScanner();
   };
 
@@ -1323,6 +1325,28 @@ function App() {
     setIsQrScannerOpen(false);
     stopQrScanner();
     setApiError('');
+  };
+
+  const handleManualQrOpen = () => {
+    const raw = qrManualValue.trim();
+    if (!raw) {
+      setQrScanError('Enter QR link or item ID.');
+      return;
+    }
+
+    let itemId = '';
+    try {
+      const parsedUrl = new URL(raw, window.location.origin);
+      itemId = parsedUrl.searchParams.get('item') || '';
+    } catch {
+      itemId = '';
+    }
+
+    if (!itemId) {
+      itemId = raw;
+    }
+
+    handleScannedQr(`${window.location.origin}${window.location.pathname}?item=${encodeURIComponent(itemId)}`);
   };
 
   const scanQrFromImageFile = async (file) => {
@@ -2049,16 +2073,30 @@ function App() {
               }}
             />
             <div className="actions">
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => qrPhotoInputRef.current?.click()}
-                disabled={isQrPhotoScanning}
-              >
-                {isQrPhotoScanning ? 'Scanning Photo...' : 'Scan From Camera Photo'}
-              </button>
-              <button type="button" className="ghost" onClick={closeQrScanner}>
-                Close
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => qrPhotoInputRef.current?.click()}
+                  disabled={isQrPhotoScanning}
+                >
+                  {isQrPhotoScanning ? 'Scanning Photo...' : 'Scan From Camera Photo'}
+                </button>
+                <button type="button" className="ghost" onClick={closeQrScanner}>
+                  Close
+                </button>
+              </div>
+            <label>
+              Enter QR Link or Item ID
+              <input
+                type="text"
+                value={qrManualValue}
+                onChange={(event) => setQrManualValue(event.target.value)}
+                placeholder="https://.../?item=... or item ID"
+              />
+            </label>
+            <div className="actions">
+              <button type="button" onClick={handleManualQrOpen}>
+                Open Item
               </button>
             </div>
           </section>
