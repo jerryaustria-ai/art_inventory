@@ -521,6 +521,22 @@ button.danger {
   width: min(520px, 100%);
 }
 
+.qr-scanner-modal {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.qr-scanner-video {
+  width: 100%;
+  min-height: 260px;
+  max-height: 62vh;
+  border: 1px solid #d8e0e1;
+  border-radius: 12px;
+  background: #0b1320;
+  object-fit: cover;
+}
+
 .image-viewer-actions {
   display: flex;
   gap: 0.5rem;

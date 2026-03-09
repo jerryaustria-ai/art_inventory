@@ -509,12 +509,18 @@ function App() {
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [viewerId, setViewerId] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+  const [qrScanError, setQrScanError] = useState('');
   const [pendingItemId, setPendingItemId] = useState(readItemIdFromUrl);
   const [imageZoom, setImageZoom] = useState(1);
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
   const panStartRef = useRef({ x: 0, y: 0 });
   const panOriginRef = useRef({ x: 0, y: 0 });
   const isPanningRef = useRef(false);
+  const scannerVideoRef = useRef(null);
+  const scannerStreamRef = useRef(null);
+  const scannerTimerRef = useRef(null);
+  const isScannerBusyRef = useRef(false);
   const isPictureOnly = displayMode === 'image';
   const canManage = session?.role === 'admin' || session?.role === 'super admin';
   const canOpenAdminPage = session?.role === 'super admin';
@@ -732,6 +738,8 @@ function App() {
     setIsTotalsOpen(false);
     setIsSculptureTotalsOpen(false);
     setIsImageViewerOpen(false);
+    setIsQrScannerOpen(false);
+    setQrScanError('');
     setIsUserModalOpen(false);
     setEditingUserId('');
   };
@@ -1232,6 +1240,105 @@ function App() {
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  const stopQrScanner = () => {
+    if (scannerTimerRef.current) {
+      clearInterval(scannerTimerRef.current);
+      scannerTimerRef.current = null;
+    }
+    if (scannerStreamRef.current) {
+      scannerStreamRef.current.getTracks().forEach((track) => track.stop());
+      scannerStreamRef.current = null;
+    }
+    if (scannerVideoRef.current) {
+      scannerVideoRef.current.srcObject = null;
+    }
+    isScannerBusyRef.current = false;
+  };
+
+  const closeQrScanner = () => {
+    setIsQrScannerOpen(false);
+    setQrScanError('');
+    stopQrScanner();
+  };
+
+  const handleScannedQr = (rawValue) => {
+    const value = String(rawValue || '').trim();
+    if (!value) return;
+
+    let itemId = '';
+
+    try {
+      const parsedUrl = new URL(value, window.location.origin);
+      itemId = parsedUrl.searchParams.get('item') || '';
+    } catch {
+      itemId = '';
+    }
+
+    if (!itemId) {
+      setQrScanError('Invalid QR code. Please scan a valid inventory QR.');
+      return;
+    }
+
+    setCurrentPage('inventory');
+    setSelectedId('');
+    setPendingItemId(itemId);
+    updateItemIdInUrl(itemId);
+    setIsMobileMenuOpen(false);
+    setIsQrScannerOpen(false);
+    stopQrScanner();
+    setApiError('');
+  };
+
+  useEffect(() => {
+    if (!isQrScannerOpen) return;
+
+    const startScanner = async () => {
+      if (!('BarcodeDetector' in window)) {
+        setQrScanError('QR scanning is not supported on this browser.');
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+          },
+          audio: false,
+        });
+        scannerStreamRef.current = stream;
+        const videoElement = scannerVideoRef.current;
+        if (!videoElement) return;
+        videoElement.srcObject = stream;
+        await videoElement.play();
+
+        const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        scannerTimerRef.current = setInterval(async () => {
+          if (isScannerBusyRef.current || !scannerVideoRef.current) return;
+          if (scannerVideoRef.current.readyState < 2) return;
+          isScannerBusyRef.current = true;
+          try {
+            const codes = await detector.detect(scannerVideoRef.current);
+            if (codes.length > 0 && codes[0]?.rawValue) {
+              handleScannedQr(codes[0].rawValue);
+            }
+          } catch {
+            // Keep trying silently while stream is active.
+          } finally {
+            isScannerBusyRef.current = false;
+          }
+        }, 300);
+      } catch {
+        setQrScanError('Unable to access camera. Please allow camera permission.');
+      }
+    };
+
+    startScanner();
+
+    return () => {
+      stopQrScanner();
+    };
+  }, [isQrScannerOpen]);
+
   if (!session) {
     return <LoginPage onLogin={handleLogin} />;
   }
@@ -1294,6 +1401,17 @@ function App() {
                   }}
                 >
                   Inventory
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    setQrScanError('');
+                    setIsQrScannerOpen(true);
+                  }}
+                >
+                  Scan QR Code
                 </button>
                 {canManage ? (
                   <button
@@ -1778,6 +1896,22 @@ function App() {
                 style={{ transform: `translate(${imagePan.x}px, ${imagePan.y}px) scale(${imageZoom})` }}
                 className="image-viewer-image"
               />
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isQrScannerOpen ? (
+        <div className="modal-backdrop">
+          <section className="panel modal qr-scanner-modal" onClick={(event) => event.stopPropagation()}>
+            <h2>Scan QR Code</h2>
+            <p className="muted">Point your camera to an inventory QR code.</p>
+            <video ref={scannerVideoRef} className="qr-scanner-video" playsInline muted autoPlay />
+            {qrScanError ? <p className="form-error">{qrScanError}</p> : null}
+            <div className="actions">
+              <button type="button" className="ghost" onClick={closeQrScanner}>
+                Close
+              </button>
             </div>
           </section>
         </div>
