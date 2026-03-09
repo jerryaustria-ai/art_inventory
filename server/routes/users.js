@@ -30,7 +30,7 @@ router.post('/login', async (req, res) => {
         if (!result) return;
         if (result.ok) {
           console.log(
-            `Login notification sent to ${user.email}. accepted=${result.accepted?.length || 0} rejected=${result.rejected?.length || 0}`
+            `Login notification sent via ${result.provider || 'unknown'} to ${user.email}. accepted=${result.accepted?.length || 0} rejected=${result.rejected?.length || 0}`
           );
           return;
         }
