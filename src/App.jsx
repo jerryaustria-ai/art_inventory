@@ -121,7 +121,22 @@ function shortItemId(value) {
   return raw.slice(0, 5);
 }
 
-function InventoryForm({ onSubmit, editingItem, onCancel }) {
+function getInitials(nameOrEmail) {
+  const raw = String(nameOrEmail || '').trim();
+  if (!raw) return 'AI';
+  const words = raw.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return `${words[0][0] || ''}${words[1][0] || ''}`.toUpperCase();
+  }
+  return raw.slice(0, 2).toUpperCase();
+}
+
+function getMobileStatCardClass(index) {
+  const classes = ['mobile-stat-lime', 'mobile-stat-coral', 'mobile-stat-amber', 'mobile-stat-sky'];
+  return classes[index % classes.length];
+}
+
+function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false }) {
   const [form, setForm] = useState(editingItem || blankForm);
   const [formError, setFormError] = useState('');
 
@@ -167,7 +182,7 @@ function InventoryForm({ onSubmit, editingItem, onCancel }) {
 
   return (
     <form className="form-grid" onSubmit={handleSubmit}>
-      <h2>{editingItem ? 'Edit Painting' : 'Add New Item'}</h2>
+      {!hideTitle ? <h2>{editingItem ? 'Edit Painting' : 'Add New Item'}</h2> : null}
       {formError ? <p className="form-error">{formError}</p> : null}
       <label>
         Artwork Category
@@ -245,7 +260,7 @@ function InventoryForm({ onSubmit, editingItem, onCancel }) {
         </div>
       ) : null}
       <div className="actions full-width">
-        <button type="submit">{editingItem ? 'Update Painting' : 'Add Painting'}</button>
+        <button type="submit">{editingItem ? 'Update Painting' : 'Save'}</button>
         <button type="button" className="ghost" onClick={onCancel}>
           {editingItem ? 'Cancel Edit' : 'Close'}
         </button>
@@ -507,21 +522,28 @@ function App() {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [displayMode, setDisplayMode] = useState('details');
   const [sortBy, setSortBy] = useState('title');
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [currentPageNumber, setCurrentPageNumber] = useState(1);
   const [editingId, setEditingId] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [returnDetailsId, setReturnDetailsId] = useState('');
   const [detailsQr, setDetailsQr] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [isTotalsOpen, setIsTotalsOpen] = useState(false);
   const [isSculptureTotalsOpen, setIsSculptureTotalsOpen] = useState(false);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [viewerId, setViewerId] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState('');
   const [isQrPhotoScanning, setIsQrPhotoScanning] = useState(false);
   const [qrManualValue, setQrManualValue] = useState('');
   const [pendingItemId, setPendingItemId] = useState(readItemIdFromUrl);
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= 700 : false
+  );
   const [imageZoom, setImageZoom] = useState(1);
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
   const panStartRef = useRef({ x: 0, y: 0 });
@@ -530,6 +552,7 @@ function App() {
   const html5QrRef = useRef(null);
   const hasHandledScanRef = useRef(false);
   const qrPhotoInputRef = useRef(null);
+  const inventorySectionRef = useRef(null);
   const isPictureOnly = displayMode === 'image';
   const canManage = session?.role === 'admin' || session?.role === 'super admin';
   const canOpenAdminPage = session?.role === 'super admin';
@@ -538,6 +561,8 @@ function App() {
   const editingUser = users.find((user) => user.id === editingUserId) || null;
   const selectedItem = inventory.find((item) => item.id === selectedId) || null;
   const viewerItem = inventory.find((item) => item.id === viewerId) || null;
+  const isMobileFormPage = isMobileViewport && isFormOpen;
+  const isMobileDetailsPage = isMobileViewport && !!selectedItem;
 
   const fetchInventory = async (activeSession = session) => {
     const isSuperAdmin = activeSession?.role === 'super admin';
@@ -584,6 +609,22 @@ function App() {
       .then((dataUrl) => setDetailsQr(dataUrl))
       .catch(() => setDetailsQr(''));
   }, [selectedItem]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const media = window.matchMedia('(max-width: 700px)');
+    const handleChange = (event) => setIsMobileViewport(event.matches);
+    setIsMobileViewport(media.matches);
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', handleChange);
+      return () => media.removeEventListener('change', handleChange);
+    }
+
+    media.addListener(handleChange);
+    return () => media.removeListener(handleChange);
+  }, []);
 
   useEffect(() => {
     if (!session) {
@@ -823,6 +864,19 @@ function App() {
     [inventory]
   );
 
+  const totalPages = Math.max(1, Math.ceil(filteredInventory.length / itemsPerPage));
+  const paginatedInventory = useMemo(() => {
+    const startIndex = (currentPageNumber - 1) * itemsPerPage;
+    return filteredInventory.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredInventory, currentPageNumber, itemsPerPage]);
+
+  const visiblePageNumbers = useMemo(() => {
+    const start = Math.max(1, currentPageNumber - 2);
+    const end = Math.min(totalPages, start + 4);
+    const adjustedStart = Math.max(1, end - 4);
+    return Array.from({ length: end - adjustedStart + 1 }, (_, index) => adjustedStart + index);
+  }, [currentPageNumber, totalPages]);
+
   const paintingsByPlace = useMemo(() => {
     const counts = inventory.reduce((accumulator, item) => {
       const key = item.place.trim() || 'Unassigned';
@@ -916,8 +970,12 @@ function App() {
 
   const handleAddNew = () => {
     setEditingId('');
+    setCurrentPage('inventory');
+    setIsUserModalOpen(false);
+    setEditingUserId('');
     setIsFormOpen(true);
     setIsMobileMenuOpen(false);
+    setIsMobileSearchOpen(false);
   };
 
   const handleEdit = (id) => {
@@ -932,6 +990,10 @@ function App() {
       setSelectedId(returnDetailsId);
       setReturnDetailsId('');
     }
+  };
+
+  const handleCloseSelectedItem = () => {
+    setSelectedId('');
   };
 
   const handleDelete = async (id) => {
@@ -1048,6 +1110,55 @@ function App() {
     setCategoryFilter('All');
     setSortBy('title');
   };
+
+  const activeFilterCount =
+    Number(search.trim() !== '') +
+    Number(statusFilter !== 'All') +
+    Number(placeFilter !== 'All') +
+    Number(categoryFilter !== 'All') +
+    Number(sortBy !== 'title');
+
+  const activeFilterSummary = [
+    search.trim() ? `Search: ${search.trim()}` : '',
+    statusFilter !== 'All' ? `Status: ${statusFilter}` : '',
+    placeFilter !== 'All' ? `Location: ${placeFilter}` : '',
+    categoryFilter !== 'All' ? `Category: ${categoryFilter}` : '',
+    sortBy !== 'title' ? `Sort: ${sortBy}` : '',
+  ]
+    .filter(Boolean)
+    .join(' • ');
+
+  useEffect(() => {
+    setCurrentPageNumber(1);
+  }, [search, statusFilter, placeFilter, categoryFilter, sortBy, itemsPerPage]);
+
+  useEffect(() => {
+    if (currentPageNumber > totalPages) {
+      setCurrentPageNumber(totalPages);
+    }
+  }, [currentPageNumber, totalPages]);
+
+  useEffect(() => {
+    if (
+      !isMobileViewport ||
+      currentPage !== 'inventory' ||
+      isMobileFormPage ||
+      isMobileDetailsPage ||
+      !search.trim() ||
+      !inventorySectionRef.current
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      inventorySectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [search, isMobileViewport, currentPage, isMobileFormPage, isMobileDetailsPage]);
 
   const openAddUserModal = () => {
     setEditingUserId('');
@@ -1256,6 +1367,112 @@ function App() {
     `);
     printWindow.document.close();
   };
+
+  const handleEditSelectedItem = () => {
+    if (!selectedItem) return;
+    setReturnDetailsId(selectedItem.id);
+    setEditingId(selectedItem.id);
+    setIsFormOpen(true);
+    setSelectedId('');
+  };
+
+  const selectedItemDetailsContent = selectedItem ? (
+    <>
+      <h2>{selectedItem.title}</h2>
+      <p className="totals-subtitle">{selectedItem.artist}</p>
+      {selectedItem.imageUrl ? (
+        <button type="button" className="details-image-btn" onClick={() => handleOpenImageViewer(selectedItem.id)}>
+          <img className="details-image" src={selectedItem.imageUrl} alt={selectedItem.title} />
+        </button>
+      ) : (
+        <div className="details-image placeholder">No Image</div>
+      )}
+      <div className="details-main">
+        <div className="details-grid">
+          <p>
+            <strong>Item ID:</strong>{' '}
+            <span title={selectedItem.id}>{shortItemId(selectedItem.id)}</span>
+          </p>
+          <p>
+            <strong>Year:</strong> {selectedItem.year || 'Not set'}
+          </p>
+          <p>
+            <strong>Category:</strong> {selectedItem.category || 'Not set'}
+          </p>
+          <p>
+            <strong>Medium:</strong> {selectedItem.medium || 'Not set'}
+          </p>
+          <p>
+            <strong>Dimensions:</strong> {selectedItem.dimensions || 'Not set'}
+          </p>
+          <p>
+            <strong>Status:</strong> {selectedItem.status}
+          </p>
+          <p>
+            <strong>Inventory State:</strong> {selectedItem.isActive ? 'Active' : 'Inactive'}
+          </p>
+          <p>
+            <strong>Place:</strong> {selectedItem.place || 'Not set'}
+          </p>
+          <p>
+            <strong>Storage Location:</strong> {selectedItem.storageLocation || 'Not set'}
+          </p>
+          <p>
+            <strong>Price:</strong> {formatPhp(selectedItem.price)}
+          </p>
+          <p>
+            <strong>Notes:</strong> {selectedItem.notes || 'None'}
+          </p>
+        </div>
+        <div className="qr-block">
+          <h3>QR Code</h3>
+          <p className="muted qr-item-id">
+            <strong>Item ID:</strong>{' '}
+            <span title={selectedItem.id}>{shortItemId(selectedItem.id)}</span>
+          </p>
+          {detailsQr ? (
+            <img src={detailsQr} alt={`QR code for ${selectedItem.title}`} className="qr-image" />
+          ) : (
+            <p className="muted">Generating QR code...</p>
+          )}
+          <div className="actions qr-actions">
+            <button type="button" onClick={handlePrintQr} disabled={!detailsQr}>
+              Print QR
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="actions">
+        {canManage ? (
+          <>
+            {selectedItem.isActive ? (
+              <>
+                <button type="button" onClick={handleEditSelectedItem}>
+                  Edit
+                </button>
+                <button type="button" className="danger" onClick={() => handleDelete(selectedItem.id)}>
+                  Delete
+                </button>
+              </>
+            ) : null}
+            {session?.role === 'super admin' && !selectedItem.isActive ? (
+              <>
+                <button type="button" onClick={() => handleActivate(selectedItem.id)}>
+                  Activate
+                </button>
+                <button type="button" className="danger" onClick={() => handlePermanentDelete(selectedItem.id)}>
+                  Delete Permanently
+                </button>
+              </>
+            ) : null}
+          </>
+        ) : null}
+        <button type="button" className="ghost" onClick={handleCloseSelectedItem}>
+          Close
+        </button>
+      </div>
+    </>
+  ) : null;
 
   const handleImagePointerDown = (event) => {
     if (imageZoom <= 1) return;
@@ -1510,9 +1727,126 @@ function App() {
 
   return (
     <main className="container">
+      {!isMobileFormPage && !isMobileDetailsPage ? (
       <header>
+        <div className="mobile-header-top">
+          <div className="mobile-header-actions">
+            <div className="mobile-menu-container">
+              <button
+                type="button"
+                className="hamburger-btn"
+                aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+                onClick={() => {
+                  setIsMobileMenuOpen((previous) => !previous);
+                  setIsMobileSearchOpen(false);
+                }}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 7h16M4 12h16M4 17h16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+            <button
+              type="button"
+              className="mobile-search-trigger"
+              aria-label={isMobileSearchOpen ? 'Close search' : 'Open search'}
+              onClick={() => {
+                setIsMobileSearchOpen((previous) => !previous);
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="m21 21-4.35-4.35M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+        {isMobileSearchOpen ? (
+          <div className="mobile-search-dropdown">
+            <div className="mobile-search-shell">
+              <span className="mobile-search-leading" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="m21 21-4.35-4.35M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              <input
+                placeholder="Search..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                autoFocus
+              />
+              <button
+                type="button"
+                className="mobile-search-close"
+                onClick={() => setIsMobileSearchOpen(false)}
+                aria-label="Close search"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M6 6l12 12M18 6 6 18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="mobile-search-actions-row">
+              <button
+                type="button"
+                className="mobile-search-link"
+                onClick={() => {
+                  setIsMobileFiltersOpen(true);
+                  setIsMobileSearchOpen(false);
+                }}
+              >
+                Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+              </button>
+              <button
+                type="button"
+                className="mobile-search-link"
+                onClick={() => {
+                  setQrScanError('');
+                  setIsQrScannerOpen(true);
+                  setIsMobileSearchOpen(false);
+                }}
+              >
+                Scan QR
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="header-row stacked-mobile">
-          <h1>Art and Painting Inventory</h1>
+          <div className="header-copy">
+            <h1>Art Inventory</h1>
+            <p>Manage your collection, track status, and keep all details in one place.</p>
+            <p className="muted header-session">
+              Logged in as: <strong>{session.role}</strong> ({session.email})
+            </p>
+            {isLoading ? <p className="muted">Loading inventory...</p> : null}
+            {apiError ? <p className="form-error">{apiError}</p> : null}
+          </div>
           <div className="actions desktop-nav-actions">
             <button
               type="button"
@@ -1538,120 +1872,253 @@ function App() {
               Logout
             </button>
           </div>
-          <div className="mobile-menu-container">
-            <button
-              type="button"
-              className="hamburger-btn"
-              aria-label="Open menu"
-              onClick={() => setIsMobileMenuOpen((previous) => !previous)}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M4 7h16M4 12h16M4 17h16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-            {isMobileMenuOpen ? (
-              <div className="mobile-menu-panel">
+        </div>
+        {isMobileMenuOpen ? (
+          <div className="mobile-menu-backdrop" onClick={() => setIsMobileMenuOpen(false)}>
+            <div className="mobile-menu-panel" onClick={(event) => event.stopPropagation()}>
+              <div className="mobile-menu-header">
+                <div className="mobile-menu-profile">
+                  <div className="mobile-menu-avatar" aria-hidden="true">
+                    {getInitials(session.name || session.email)}
+                  </div>
+                  <div className="mobile-menu-profile-copy">
+                    <strong>{session.name || 'User'}</strong>
+                    <span>
+                      {session.role} • {session.email}
+                    </span>
+                  </div>
+                </div>
                 <button
                   type="button"
-                  className={currentPage === 'inventory' ? '' : 'ghost'}
+                  className="mobile-drawer-close-link"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  aria-label="Close menu"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M6 6l12 12M18 6L6 18"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeWidth="2"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <button
+                type="button"
+                className={`mobile-menu-item ${currentPage === 'inventory' ? '' : 'ghost'}`}
+                onClick={() => {
+                  setCurrentPage('inventory');
+                  setIsMobileMenuOpen(false);
+                }}
+              >
+                <span className="mobile-menu-item-main">
+                  <span className="mobile-menu-icon">[]</span>
+                  <span>Inventory</span>
+                </span>
+                <span className="mobile-menu-chevron" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+              {canManage ? (
+                <button
+                  type="button"
+                  className="mobile-menu-item"
                   onClick={() => {
                     setCurrentPage('inventory');
                     setIsMobileMenuOpen(false);
+                    handleAddNew();
                   }}
                 >
-                  Inventory
+                  <span className="mobile-menu-item-main">
+                    <span className="mobile-menu-icon">＋</span>
+                    <span>Add New Item</span>
+                  </span>
+                  <span className="mobile-menu-chevron" aria-hidden="true">
+                    ›
+                  </span>
                 </button>
+              ) : null}
+              {canOpenAdminPage ? (
                 <button
                   type="button"
-                  className="ghost"
+                  className={`mobile-menu-item ${currentPage === 'admin' ? '' : 'ghost'}`}
                   onClick={() => {
+                    setCurrentPage('admin');
                     setIsMobileMenuOpen(false);
-                    setQrScanError('');
-                    setIsQrScannerOpen(true);
+                    fetchUsers();
+                    fetchAuditLogs(auditActionFilter);
                   }}
                 >
-                  Scan QR Code
+                  <span className="mobile-menu-item-main">
+                    <span className="mobile-menu-icon">##</span>
+                    <span>Admin Page</span>
+                  </span>
+                  <span className="mobile-menu-chevron" aria-hidden="true">
+                    ›
+                  </span>
                 </button>
-                {canManage ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCurrentPage('inventory');
-                      handleAddNew();
-                    }}
-                  >
-                    Add New Item
-                  </button>
-                ) : null}
-                {canOpenAdminPage ? (
-                  <button
-                    type="button"
-                    className={currentPage === 'admin' ? '' : 'ghost'}
-                    onClick={() => {
-                      setCurrentPage('admin');
-                      setIsMobileMenuOpen(false);
-                      fetchUsers();
-                      fetchAuditLogs(auditActionFilter);
-                    }}
-                  >
-                    Admin Page
-                  </button>
-                ) : null}
-                <button type="button" className="ghost" onClick={handleLogout}>
-                  Logout
-                </button>
-              </div>
-            ) : null}
+              ) : null}
+              <button
+                type="button"
+                className="mobile-menu-item ghost"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setQrScanError('');
+                  setIsQrScannerOpen(true);
+                }}
+              >
+                <span className="mobile-menu-item-main">
+                  <span className="mobile-menu-icon">QR</span>
+                  <span>Scan QR Code</span>
+                </span>
+                <span className="mobile-menu-chevron" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+              <button type="button" className="mobile-menu-item ghost" onClick={handleLogout}>
+                <span className="mobile-menu-item-main">
+                  <span className="mobile-menu-icon">OO</span>
+                  <span>Logout</span>
+                </span>
+                <span className="mobile-menu-chevron" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+            </div>
           </div>
-        </div>
-        <p>Manage your collection, track status, and keep all details in one place.</p>
-        <p className="muted">
-          Logged in as: <strong>{session.role}</strong> ({session.email})
-        </p>
-        {isLoading ? <p className="muted">Loading inventory...</p> : null}
-        {apiError ? <p className="form-error">{apiError}</p> : null}
+        ) : null}
       </header>
+      ) : null}
 
       {currentPage === 'inventory' ? (
+        isMobileFormPage ? (
+          <section className="mobile-form-page">
+            <div className="mobile-form-page-header">
+              <button type="button" className="mobile-form-back-link" onClick={handleCloseForm} aria-label="Back">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M15 6 9 12l6 6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </button>
+              <div>
+                <h2>{editingItem ? 'Edit Item' : 'Add New Item'}</h2>
+              </div>
+            </div>
+            <InventoryForm
+              onSubmit={handleSubmit}
+              editingItem={editingItem}
+              onCancel={handleCloseForm}
+              hideTitle
+            />
+          </section>
+        ) : isMobileDetailsPage ? (
+          <section className="panel mobile-details-page">
+            <div className="mobile-form-page-header">
+              <button type="button" className="mobile-form-back-link" onClick={handleCloseSelectedItem} aria-label="Back">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M15 6 9 12l6 6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </button>
+              <div>
+                <h2>Item Details</h2>
+              </div>
+            </div>
+            {selectedItemDetailsContent}
+          </section>
+        ) : (
         <>
       <section className="stats-row">
         <button
           type="button"
-          className="panel stat stat-button"
+          className={`panel stat stat-button ${getMobileStatCardClass(0)}`}
           onClick={() => {
             setIsTotalsOpen(true);
             setIsSculptureTotalsOpen(false);
           }}
         >
+          <span className="stat-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path
+                d="M5 19V8.8a1 1 0 0 1 .42-.82l5.5-4a1 1 0 0 1 1.16 0l5.5 4a1 1 0 0 1 .42.82V19M9 19v-5h6v5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
           <span>Total Painting</span>
           <strong>{totalPaintingCount.toLocaleString()}</strong>
           <small className="stat-subvalue">Est. {formatPhp(totalPaintingValue)}</small>
         </button>
         <button
           type="button"
-          className="panel stat stat-button"
+          className={`panel stat stat-button ${getMobileStatCardClass(1)}`}
           onClick={() => {
             setIsSculptureTotalsOpen(true);
             setIsTotalsOpen(false);
           }}
         >
+          <span className="stat-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path
+                d="M7 5h10l2 4-2 10H7L5 9l2-4Zm2.2 4.5h5.6M10 9l.8 6m2.4-6-.8 6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
           <span>Sculpture</span>
           <strong>{totalSculptureCount.toLocaleString()}</strong>
           <small className="stat-subvalue">Est. {formatPhp(totalSculptureValue)}</small>
         </button>
-        <article className="panel stat">
+        <article className={`panel stat ${getMobileStatCardClass(2)}`}>
+          <span className="stat-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path
+                d="M12 3v18M16.5 7.5c0-1.7-1.8-3-4.5-3s-4.5 1.3-4.5 3 1.8 3 4.5 3 4.5 1.3 4.5 3-1.8 3-4.5 3-4.5-1.3-4.5-3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
           <span>Estimated Value</span>
           <strong>{formatPhp(totalValue)}</strong>
         </article>
       </section>
+      <div className="mobile-stats-divider" aria-hidden="true" />
+      {hasActiveFilters ? (
+        <div className="mobile-clear-filter-row">
+          <span className="mobile-active-filter-text">{activeFilterSummary}</span>
+          <button type="button" className="mobile-clear-filter-link" onClick={clearAllFilters}>
+            Clear filter
+          </button>
+        </div>
+      ) : null}
 
-      <section className="panel controls">
+      <section className="panel controls" ref={inventorySectionRef}>
         <div className="heading-row">
           <h2>Inventory</h2>
           {canManage ? (
@@ -1748,7 +2215,7 @@ function App() {
         </div>
         <div className="card-grid">
           {filteredInventory.length === 0 ? <p>No paintings match your filters.</p> : null}
-          {filteredInventory.map((item) => (
+          {paginatedInventory.map((item) => (
             <article
               className={`card ${displayMode === 'image' ? 'picture-only' : ''} ${item.isActive ? '' : 'inactive-card'}`}
               key={item.id}
@@ -1826,9 +2293,62 @@ function App() {
             </article>
           ))}
         </div>
+        {filteredInventory.length > 0 ? (
+          <div className="pagination-bar">
+            {filteredInventory.length > itemsPerPage ? (
+              <div className="pagination-controls">
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setCurrentPageNumber((previous) => Math.max(1, previous - 1))}
+                  disabled={currentPageNumber === 1}
+                >
+                  Prev
+                </button>
+                <div className="pagination-pages">
+                  {visiblePageNumbers.map((pageNumber) => (
+                    <button
+                      type="button"
+                      key={pageNumber}
+                      className={pageNumber === currentPageNumber ? '' : 'ghost'}
+                      onClick={() => setCurrentPageNumber(pageNumber)}
+                    >
+                      {pageNumber}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setCurrentPageNumber((previous) => Math.min(totalPages, previous + 1))}
+                  disabled={currentPageNumber === totalPages}
+                >
+                  Next
+                </button>
+              </div>
+            ) : (
+              <div />
+            )}
+            <label className="pagination-size">
+              Items per page
+              <select value={itemsPerPage} onChange={(event) => setItemsPerPage(Number(event.target.value))}>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={30}>30</option>
+                <option value={40}>40</option>
+                <option value={50}>50</option>
+                <option value={60}>60</option>
+                <option value={70}>70</option>
+                <option value={80}>80</option>
+                <option value={90}>90</option>
+                <option value={100}>100</option>
+              </select>
+            </label>
+          </div>
+        ) : null}
       </section>
 
-      {isFormOpen ? (
+      {isFormOpen && !isMobileFormPage ? (
         <div className="modal-backdrop">
           <section className="panel modal" onClick={(event) => event.stopPropagation()}>
             <button type="button" className="modal-close" onClick={handleCloseForm} aria-label="Close">
@@ -1839,17 +2359,86 @@ function App() {
         </div>
       ) : null}
 
+      {isMobileFiltersOpen ? (
+        <div className="modal-backdrop">
+          <section className="panel modal mobile-filters-modal" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => setIsMobileFiltersOpen(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h2>Advanced Filters</h2>
+            <div className="mobile-filters-grid">
+              <label>
+                Status
+                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                  <option>All</option>
+                  <option>Available</option>
+                  <option>Sold</option>
+                  <option>Reserved</option>
+                  <option>On Loan</option>
+                </select>
+              </label>
+              <label>
+                Location
+                <select value={placeFilter} onChange={(event) => setPlaceFilter(event.target.value)}>
+                  <option value="All">All Locations</option>
+                  {paintingsByPlace.map(([name]) => (
+                    <option value={name} key={`mobile-filter-${name}`}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Category
+                <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                  <option value="All">All Categories</option>
+                  <option value="Painting">Painting</option>
+                  <option value="Sculpture">Sculpture</option>
+                  <option value="Digital">Digital</option>
+                  <option value="Unassigned">Unassigned</option>
+                </select>
+              </label>
+              <label>
+                Sort
+                <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+                  <option value="title">Sort: Title</option>
+                  <option value="year">Sort: Year</option>
+                  <option value="price">Sort: Price</option>
+                </select>
+              </label>
+            </div>
+            <div className="actions">
+              {hasActiveFilters ? (
+                <button type="button" className="ghost" onClick={clearAllFilters}>
+                  Clear
+                </button>
+              ) : null}
+              <button type="button" className="ghost" onClick={() => setDisplayMode(isPictureOnly ? 'details' : 'image')}>
+                {isPictureOnly ? 'Full Details' : 'Picture Only'}
+              </button>
+              <button type="button" onClick={() => setIsMobileFiltersOpen(false)}>
+                Apply
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {isTotalsOpen ? (
         <div className="modal-backdrop">
           <section className="panel modal totals-modal" onClick={(event) => event.stopPropagation()}>
             <button type="button" className="modal-close" onClick={() => setIsTotalsOpen(false)} aria-label="Close">
               ×
             </button>
-            <h2>Total Painting By Location</h2>
+            <h2>Paintings by Location</h2>
             <p className="totals-subtitle">Total painting inventory: {formatPaintingCount(paintingOnlyItems.length)}</p>
             <p className="totals-subtitle">Estimated value: {formatPhp(totalPaintingValue)}</p>
             <article className="totals-group">
-              <h3>By Location</h3>
               {paintingOnlyByPlace.map(([name, count]) => (
                 <button
                   type="button"
@@ -1886,7 +2475,6 @@ function App() {
             <p className="totals-subtitle">Total sculpture inventory: {formatSculptureCount(sculptureOnlyItems.length)}</p>
             <p className="totals-subtitle">Estimated value: {formatPhp(totalSculptureValue)}</p>
             <article className="totals-group">
-              <h3>By Location</h3>
               {sculptureOnlyByPlace.map(([name, count]) => (
                 <button
                   type="button"
@@ -1908,113 +2496,13 @@ function App() {
         </div>
       ) : null}
 
-      {selectedItem ? (
+      {selectedItem && !isMobileDetailsPage ? (
         <div className="modal-backdrop">
           <section className="panel modal details-modal" onClick={(event) => event.stopPropagation()}>
             <button type="button" className="modal-close" onClick={() => setSelectedId('')} aria-label="Close">
               ×
             </button>
-            <h2>{selectedItem.title}</h2>
-            <p className="totals-subtitle">{selectedItem.artist}</p>
-            {selectedItem.imageUrl ? (
-              <button type="button" className="details-image-btn" onClick={() => handleOpenImageViewer(selectedItem.id)}>
-                <img className="details-image" src={selectedItem.imageUrl} alt={selectedItem.title} />
-              </button>
-            ) : (
-              <div className="details-image placeholder">No Image</div>
-            )}
-            <div className="details-main">
-              <div className="details-grid">
-                <p>
-                  <strong>Item ID:</strong>{' '}
-                  <span title={selectedItem.id}>{shortItemId(selectedItem.id)}</span>
-                </p>
-                <p>
-                  <strong>Year:</strong> {selectedItem.year || 'Not set'}
-                </p>
-                <p>
-                  <strong>Category:</strong> {selectedItem.category || 'Not set'}
-                </p>
-                <p>
-                  <strong>Medium:</strong> {selectedItem.medium || 'Not set'}
-                </p>
-                <p>
-                  <strong>Dimensions:</strong> {selectedItem.dimensions || 'Not set'}
-                </p>
-                <p>
-                  <strong>Status:</strong> {selectedItem.status}
-                </p>
-                <p>
-                  <strong>Inventory State:</strong> {selectedItem.isActive ? 'Active' : 'Inactive'}
-                </p>
-                <p>
-                  <strong>Place:</strong> {selectedItem.place || 'Not set'}
-                </p>
-                <p>
-                  <strong>Storage Location:</strong> {selectedItem.storageLocation || 'Not set'}
-                </p>
-                <p>
-                  <strong>Price:</strong> {formatPhp(selectedItem.price)}
-                </p>
-                <p>
-                  <strong>Notes:</strong> {selectedItem.notes || 'None'}
-                </p>
-              </div>
-              <div className="qr-block">
-                <h3>QR Code</h3>
-                <p className="muted qr-item-id">
-                  <strong>Item ID:</strong>{' '}
-                  <span title={selectedItem.id}>{shortItemId(selectedItem.id)}</span>
-                </p>
-                {detailsQr ? (
-                  <img src={detailsQr} alt={`QR code for ${selectedItem.title}`} className="qr-image" />
-                ) : (
-                  <p className="muted">Generating QR code...</p>
-                )}
-                <div className="actions qr-actions">
-                  <button type="button" onClick={handlePrintQr} disabled={!detailsQr}>
-                    Print QR
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="actions">
-              {canManage ? (
-                <>
-                  {selectedItem.isActive ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReturnDetailsId(selectedItem.id);
-                          setEditingId(selectedItem.id);
-                          setIsFormOpen(true);
-                          setSelectedId('');
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button type="button" className="danger" onClick={() => handleDelete(selectedItem.id)}>
-                        Delete
-                      </button>
-                    </>
-                  ) : null}
-                  {session?.role === 'super admin' && !selectedItem.isActive ? (
-                    <>
-                      <button type="button" onClick={() => handleActivate(selectedItem.id)}>
-                        Activate
-                      </button>
-                      <button type="button" className="danger" onClick={() => handlePermanentDelete(selectedItem.id)}>
-                        Delete Permanently
-                      </button>
-                    </>
-                  ) : null}
-                </>
-              ) : null}
-              <button type="button" className="ghost" onClick={() => setSelectedId('')}>
-                Close
-              </button>
-            </div>
+            {selectedItemDetailsContent}
           </section>
         </div>
       ) : null}
@@ -2124,6 +2612,7 @@ function App() {
         </div>
       ) : null}
         </>
+        )
       ) : null}
 
       {currentPage === 'admin' && canOpenAdminPage ? (
@@ -2235,6 +2724,53 @@ function App() {
 
       {isUserModalOpen ? (
         <UserFormModal editingUser={editingUser} onSubmit={handleSubmitUser} onCancel={closeUserModal} />
+      ) : null}
+
+      {!isMobileFormPage && !isMobileDetailsPage ? (
+        <nav
+          className="mobile-bottom-nav"
+          aria-label="Mobile navigation"
+          style={{
+            gridTemplateColumns: `repeat(${canOpenAdminPage ? 4 : 3}, minmax(0, 1fr))`,
+          }}
+        >
+          <button
+            type="button"
+            className={currentPage === 'inventory' ? 'active' : ''}
+            onClick={() => setCurrentPage('inventory')}
+          >
+            <span className="mobile-bottom-icon">[]</span>
+            <span>Home</span>
+          </button>
+          {canOpenAdminPage ? (
+            <button
+              type="button"
+              className={currentPage === 'admin' ? 'active' : ''}
+              onClick={() => {
+                setCurrentPage('admin');
+                fetchUsers();
+                fetchAuditLogs(auditActionFilter);
+              }}
+            >
+              <span className="mobile-bottom-icon">##</span>
+              <span>Admin</span>
+            </button>
+          ) : null}
+          <button type="button" onClick={handleAddNew}>
+            <span className="mobile-bottom-icon">+</span>
+            <span>Add Item</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setQrScanError('');
+              setIsQrScannerOpen(true);
+            }}
+          >
+            <span className="mobile-bottom-icon">QR</span>
+            <span>Scan</span>
+          </button>
+        </nav>
       ) : null}
     </main>
   );
