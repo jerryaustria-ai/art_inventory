@@ -215,8 +215,8 @@ function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, cat
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    if (!form.title.trim() || !form.artist.trim()) {
-      setFormError('Please fill in required fields: Title and Artist.');
+    if (!form.category.trim() || !form.title.trim() || !form.artist.trim()) {
+      setFormError('Please fill in required fields: Artwork Category, Title, and Artist.');
       return;
     }
     setFormError('');
@@ -248,8 +248,8 @@ function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, cat
       {!hideTitle ? <h2>{editingItem ? 'Edit Painting' : 'Add New Item'}</h2> : null}
       {formError ? <p className="form-error">{formError}</p> : null}
       <label>
-        Artwork Category
-        <select name="category" value={form.category} onChange={handleChange}>
+        Artwork Category *
+        <select name="category" value={form.category} onChange={handleChange} required>
           <option value="">Select category</option>
           {categories.map((category) => (
             <option key={category} value={category}>
@@ -585,6 +585,7 @@ function App() {
   const [isInventoryImporting, setIsInventoryImporting] = useState(false);
   const [inventoryImportMessage, setInventoryImportMessage] = useState('');
   const [inventoryImportError, setInventoryImportError] = useState('');
+  const [isInventoryMutating, setIsInventoryMutating] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -617,6 +618,7 @@ function App() {
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState('');
   const [isQrPhotoScanning, setIsQrPhotoScanning] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [qrManualValue, setQrManualValue] = useState('');
   const [pendingItemId, setPendingItemId] = useState(readItemIdFromUrl);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
@@ -635,7 +637,12 @@ function App() {
   const canManage = session?.role === 'admin' || session?.role === 'super admin';
   const canOpenAdminPage = session?.role === 'super admin';
   const isOverlayLoading =
-    isLoading || isUsersLoading || isAuditLoading || isCategoriesLoading || isInventoryImporting;
+    isLoading ||
+    isUsersLoading ||
+    isAuditLoading ||
+    isCategoriesLoading ||
+    isInventoryImporting ||
+    isInventoryMutating;
 
   const editingItem = inventory.find((item) => item.id === editingId) || null;
   const editingUser = users.find((user) => user.id === editingUserId) || null;
@@ -654,6 +661,8 @@ function App() {
 
   const loadingOverlayMessage = isInventoryImporting
     ? 'Importing inventory...'
+    : isInventoryMutating
+      ? 'Updating inventory...'
     : isAuditLoading
       ? 'Loading audit trail...'
       : isUsersLoading
@@ -1337,6 +1346,16 @@ function App() {
     }
   }, [canOpenAdminPage, currentPage]);
 
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 320);
+    };
+
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   const filteredInventory = useMemo(() => {
     const searchTerm = search.trim().toLowerCase();
 
@@ -1470,6 +1489,7 @@ function App() {
 
   const handleSubmit = async (form) => {
     if (editingItem) {
+      setIsInventoryMutating(true);
       try {
         const response = await fetch(`${API_BASE}/artworks/${editingItem.id}`, {
           method: 'PUT',
@@ -1490,10 +1510,13 @@ function App() {
         setApiError('');
       } catch {
         setApiError('Failed to update item. Please try again.');
+      } finally {
+        setIsInventoryMutating(false);
       }
       return;
     }
 
+    setIsInventoryMutating(true);
     try {
       const response = await fetch(`${API_BASE}/artworks`, {
         method: 'POST',
@@ -1509,6 +1532,8 @@ function App() {
       setApiError('');
     } catch {
       setApiError('Failed to add item. Please try again.');
+    } finally {
+      setIsInventoryMutating(false);
     }
   };
 
@@ -1547,6 +1572,7 @@ function App() {
     const shouldDelete = window.confirm(confirmMessage);
     if (!shouldDelete) return;
 
+    setIsInventoryMutating(true);
     try {
       const response = await fetch(`${API_BASE}/artworks/${id}`, {
         method: 'DELETE',
@@ -1574,6 +1600,8 @@ function App() {
       setApiError('');
     } catch {
       setApiError('Failed to delete item. Please try again.');
+    } finally {
+      setIsInventoryMutating(false);
     }
   };
 
@@ -1583,6 +1611,7 @@ function App() {
     const shouldDelete = window.confirm(`Permanently delete ${label}? This action cannot be undone.`);
     if (!shouldDelete) return;
 
+    setIsInventoryMutating(true);
     try {
       const response = await fetch(`${API_BASE}/artworks/${id}/permanent`, {
         method: 'DELETE',
@@ -1606,10 +1635,13 @@ function App() {
       setApiError('');
     } catch {
       setApiError('Failed to permanently delete item. Please try again.');
+    } finally {
+      setIsInventoryMutating(false);
     }
   };
 
   const handleActivate = async (id) => {
+    setIsInventoryMutating(true);
     try {
       const response = await fetch(`${API_BASE}/artworks/${id}/activate`, {
         method: 'PATCH',
@@ -1630,6 +1662,8 @@ function App() {
       setApiError('');
     } catch {
       setApiError('Failed to activate item. Please try again.');
+    } finally {
+      setIsInventoryMutating(false);
     }
   };
 
@@ -2339,6 +2373,16 @@ function App() {
             <strong>{loadingOverlayMessage}</strong>
           </div>
         </div>
+      ) : null}
+      {showScrollTop ? (
+        <button
+          type="button"
+          className="scroll-top-link"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="Scroll to top"
+        >
+          ↑
+        </button>
       ) : null}
       {!isMobileFormPage && !isMobileDetailsPage ? (
       <header>
