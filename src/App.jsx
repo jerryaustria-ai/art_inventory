@@ -582,6 +582,7 @@ function App() {
   const [adminSection, setAdminSection] = useState('users');
   const [editingCategoryId, setEditingCategoryId] = useState('');
   const [categoryName, setCategoryName] = useState('');
+  const [categoryFormError, setCategoryFormError] = useState('');
   const [isInventoryImporting, setIsInventoryImporting] = useState(false);
   const [inventoryImportMessage, setInventoryImportMessage] = useState('');
   const [inventoryImportError, setInventoryImportError] = useState('');
@@ -1184,6 +1185,7 @@ function App() {
   const resetCategoryForm = () => {
     setEditingCategoryId('');
     setCategoryName('');
+    setCategoryFormError('');
   };
 
   const handleSubmitCategory = async (event) => {
@@ -1191,9 +1193,10 @@ function App() {
     const trimmedName = categoryName.trim();
     const previousCategoryName = categories.find((item) => item.id === editingCategoryId)?.name || '';
     if (!trimmedName) {
-      setApiError('Category name is required.');
+      setCategoryFormError('Category name is required.');
       return;
     }
+    setCategoryFormError('');
 
     try {
       const response = await fetch(
@@ -1224,13 +1227,14 @@ function App() {
       resetCategoryForm();
       setApiError('');
     } catch (error) {
-      setApiError(error.message || 'Failed to save category.');
+      setCategoryFormError(error.message || 'Failed to save category.');
     }
   };
 
   const handleEditCategory = (category) => {
     setEditingCategoryId(category.id);
     setCategoryName(category.name);
+    setCategoryFormError('');
   };
 
   const handleDeleteCategory = async (category) => {
@@ -2081,9 +2085,15 @@ function App() {
         <input
           type="text"
           value={categoryName}
-          onChange={(event) => setCategoryName(event.target.value)}
+          onChange={(event) => {
+            setCategoryName(event.target.value);
+            if (categoryFormError) setCategoryFormError('');
+          }}
           placeholder="Enter category name"
+          className={categoryFormError ? 'field-error' : ''}
+          aria-invalid={categoryFormError ? 'true' : 'false'}
         />
+        {categoryFormError ? <p className="form-error category-form-error">{categoryFormError}</p> : null}
         <div className="actions">
           <button type="submit">{editingCategoryId ? 'Update Category' : 'Add Category'}</button>
           {editingCategoryId ? (
@@ -2496,7 +2506,7 @@ function App() {
         ) : null}
         <div className="header-row stacked-mobile">
           <div className="header-copy">
-            <h1>Art Inventory</h1>
+            <h1>Artworks Inventory</h1>
             <p>Manage your collection, track status, and keep all details in one place.</p>
             <p className="muted header-session">
               Logged in as: <strong>{session.role}</strong> ({session.email})
@@ -2904,7 +2914,11 @@ function App() {
               className={`card ${displayMode === 'image' ? 'picture-only' : ''} ${item.isActive ? '' : 'inactive-card'}`}
               key={item.id}
             >
-              <button type="button" className="card-media-btn" onClick={() => handleOpenImageViewer(item.id)}>
+              <button
+                type="button"
+                className="card-media-btn"
+                onClick={() => setSelectedId(item.id)}
+              >
                 {item.imageUrl ? (
                   <img src={item.imageUrl} alt={item.title} />
                 ) : (
@@ -2912,11 +2926,6 @@ function App() {
                 )}
               </button>
               {!item.isActive ? <span className="inactive-badge">Inactive</span> : null}
-              {displayMode === 'image' ? (
-                <button type="button" className="picture-title-btn" onClick={() => setSelectedId(item.id)}>
-                  {item.title}
-                </button>
-              ) : null}
               {displayMode === 'details' ? (
                 <div className="card-body">
                   <h3>
@@ -2948,6 +2957,39 @@ function App() {
                   {item.notes ? <p className="notes">{item.notes}</p> : null}
                 </div>
               ) : null}
+              {displayMode === 'image' ? (
+                <div className="picture-card-footer">
+                  <button type="button" className="picture-title-btn" onClick={() => setSelectedId(item.id)}>
+                    {item.title}
+                  </button>
+                  <div className="actions card-actions">
+                    {canManage ? (
+                      <>
+                        {item.isActive ? (
+                          <>
+                            <button type="button" onClick={() => handleEdit(item.id)}>
+                              Edit
+                            </button>
+                            <button type="button" className="danger" onClick={() => handleDelete(item.id)}>
+                              Delete
+                            </button>
+                          </>
+                        ) : null}
+                        {session?.role === 'super admin' && !item.isActive ? (
+                          <>
+                            <button type="button" onClick={() => handleActivate(item.id)}>
+                              Activate
+                            </button>
+                            <button type="button" className="danger" onClick={() => handlePermanentDelete(item.id)}>
+                              Delete Permanently
+                            </button>
+                          </>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
               <div className="actions card-actions">
                 {canManage ? (
                   <>
@@ -2974,6 +3016,7 @@ function App() {
                   </>
                 ) : null}
               </div>
+              )}
             </article>
           ))}
         </div>

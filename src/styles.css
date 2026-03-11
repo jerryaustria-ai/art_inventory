@@ -540,6 +540,16 @@ header p {
   font-size: 0.9rem;
 }
 
+.category-form-error {
+  grid-column: auto;
+  margin-top: -0.25rem;
+}
+
+.field-error {
+  border-color: #b42318 !important;
+  box-shadow: inset 0 0 0 1px #b42318;
+}
+
 label {
   display: flex;
   flex-direction: column;
@@ -933,7 +943,7 @@ button.danger {
 
 .card.picture-only {
   position: relative;
-  grid-template-rows: 220px;
+  grid-template-rows: 220px auto;
 }
 
 .card img,
@@ -959,20 +969,6 @@ button.danger {
   height: 220px;
 }
 
-.card.picture-only .card-actions {
-  position: absolute;
-  left: 0.65rem;
-  right: 0.65rem;
-  bottom: 0.65rem;
-  padding: 0;
-  justify-content: space-between;
-  z-index: 2;
-}
-
-.card.picture-only .card-actions button {
-  box-shadow: 0 4px 10px rgba(16, 32, 36, 0.25);
-}
-
 .inactive-badge {
   position: absolute;
   top: 0.65rem;
@@ -987,19 +983,24 @@ button.danger {
 }
 
 .picture-title-btn {
-  position: absolute;
-  top: 0.65rem;
-  left: 0.65rem;
-  right: 0.65rem;
-  z-index: 2;
   text-align: left;
   border: 0;
-  border-radius: 8px;
-  padding: 0.45rem 0.6rem;
-  background: rgba(15, 23, 42, 0.62);
-  color: #ffffff;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: #1f2a2b;
   font-weight: 700;
-  backdrop-filter: blur(2px);
+}
+
+.picture-card-footer {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+}
+
+.card.picture-only .card-actions {
+  padding: 0;
+  justify-content: space-between;
 }
 
 .details-modal h2 {
@@ -1340,11 +1341,12 @@ button.danger {
   }
 
   header h1 {
-    font-size: 3.2rem;
-    line-height: 0.92;
+    font-size: clamp(2.4rem, 11vw, 3.2rem);
+    line-height: 0.96;
     letter-spacing: -0.06em;
     max-width: none;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   header p {
@@ -1425,6 +1427,8 @@ button.danger {
 
   .header-copy {
     max-width: 22rem;
+    text-align: center;
+    margin: 0 auto;
   }
 
   .header-session {
