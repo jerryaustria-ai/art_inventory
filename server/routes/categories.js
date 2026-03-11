@@ -118,7 +118,18 @@ router.delete('/:id', async (req, res) => {
     }
 
     const linkedCount = await Artwork.countDocuments({ category: category.name });
-    await Artwork.updateMany({ category: category.name }, { $set: { category: '' } });
+    if (linkedCount > 0) {
+      return res.status(409).json({
+        message: `There ${linkedCount === 1 ? 'is' : 'are'} ${linkedCount} inventory ${linkedCount === 1 ? 'item' : 'items'} under this category. Delete or move those items first.`,
+        code: 'CATEGORY_IN_USE',
+        linkedCount,
+        category: {
+          id: String(category._id),
+          name: category.name,
+        },
+      });
+    }
+
     await Category.findByIdAndDelete(req.params.id);
 
     await writeAuditLog({

@@ -869,7 +869,7 @@ function App() {
   };
 
   const handleDeleteCategory = async (category) => {
-    const confirmed = window.confirm(`Delete category "${category.name}"? Items using it will be set to no category.`);
+    const confirmed = window.confirm(`Delete category "${category.name}"?`);
     if (!confirmed) return;
 
     try {
@@ -884,6 +884,25 @@ function App() {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
+        if (response.status === 409 && payload?.code === 'CATEGORY_IN_USE') {
+          const shouldShowInventory = window.confirm(
+            `${payload.message || 'This category still has inventory.'} Do you want to show the inventory in this category?`
+          );
+          if (shouldShowInventory) {
+            setCurrentPage('inventory');
+            setCategoryFilter(category.name);
+            setSearch('');
+            setStatusFilter('All');
+            setPlaceFilter('All');
+            setCurrentPageNumber(1);
+            setIsMobileMenuOpen(false);
+            setIsMobileSearchOpen(false);
+            requestAnimationFrame(() => {
+              inventorySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+          }
+          return;
+        }
         throw new Error(payload.message || 'Failed to delete category.');
       }
 
