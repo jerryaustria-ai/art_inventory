@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { Html5Qrcode } from 'html5-qrcode';
+import * as XLSX from 'xlsx';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 const AUTH_STORAGE_KEY = 'art_inventory_auth_v1';
@@ -134,6 +135,68 @@ function getInitials(nameOrEmail) {
 function getMobileStatCardClass(index) {
   const classes = ['mobile-stat-lime', 'mobile-stat-coral', 'mobile-stat-amber', 'mobile-stat-sky'];
   return classes[index % classes.length];
+}
+
+function getCategoryStatIcon(category) {
+  const key = String(category || '').trim().toLowerCase();
+
+  if (key === 'painting') {
+    return (
+      <svg viewBox="0 0 24 24">
+        <path
+          d="M5 19V8.8a1 1 0 0 1 .42-.82l5.5-4a1 1 0 0 1 1.16 0l5.5 4a1 1 0 0 1 .42.82V19M9 19v-5h6v5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
+  if (key === 'sculpture') {
+    return (
+      <svg viewBox="0 0 24 24">
+        <path
+          d="M7 5h10l2 4-2 10H7L5 9l2-4Zm2.2 4.5h5.6M10 9l.8 6m2.4-6-.8 6"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
+  if (key === 'digital') {
+    return (
+      <svg viewBox="0 0 24 24">
+        <path
+          d="M7 5h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm3 14h4m-6 0h8"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24">
+      <path
+        d="M6 6h12v12H6zM9 9h6v6H9z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, categories = [] }) {
@@ -519,6 +582,9 @@ function App() {
   const [adminSection, setAdminSection] = useState('users');
   const [editingCategoryId, setEditingCategoryId] = useState('');
   const [categoryName, setCategoryName] = useState('');
+  const [isInventoryImporting, setIsInventoryImporting] = useState(false);
+  const [inventoryImportMessage, setInventoryImportMessage] = useState('');
+  const [inventoryImportError, setInventoryImportError] = useState('');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -816,6 +882,284 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportInventoryExcel = () => {
+    try {
+      const rows = inventory.map((item) => ({
+        'Item ID': item.id,
+        Title: item.title || '',
+        Artist: item.artist || '',
+        Year: item.year || '',
+        Category: item.category || '',
+        Medium: item.medium || '',
+        Dimensions: item.dimensions || '',
+        Place: item.place || '',
+        'Storage Location': item.storageLocation || '',
+        Status: item.status || '',
+        Price: item.price || '',
+        Notes: item.notes || '',
+        'Image URL': item.imageUrl || '',
+        'Inventory State': item.isActive === false ? 'Inactive' : 'Active',
+      }));
+
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventory');
+      const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const timestamp = new Date().toISOString().replaceAll(':', '-');
+
+      anchor.href = url;
+      anchor.download = `inventory-${timestamp}.xlsx`;
+      anchor.rel = 'noopener';
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+
+      // Some browsers need a short delay before the blob URL is revoked.
+      window.setTimeout(() => {
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+      }, 1500);
+
+      setInventoryImportError('');
+      setInventoryImportMessage(`Inventory Excel exported successfully.`);
+    } catch (error) {
+      setInventoryImportMessage('');
+      setInventoryImportError(error?.message || 'Failed to export inventory file.');
+    }
+  };
+
+  const handleExportInventoryCsv = () => {
+    try {
+      const header = [
+        'Item ID',
+        'Title',
+        'Artist',
+        'Year',
+        'Category',
+        'Medium',
+        'Dimensions',
+        'Place',
+        'Storage Location',
+        'Status',
+        'Price',
+        'Notes',
+        'Image URL',
+        'Inventory State',
+      ];
+
+      const rows = inventory.map((item) => [
+        item.id,
+        item.title || '',
+        item.artist || '',
+        item.year || '',
+        item.category || '',
+        item.medium || '',
+        item.dimensions || '',
+        item.place || '',
+        item.storageLocation || '',
+        item.status || '',
+        item.price || '',
+        item.notes || '',
+        item.imageUrl || '',
+        item.isActive === false ? 'Inactive' : 'Active',
+      ]);
+
+      const csv = [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const timestamp = new Date().toISOString().replaceAll(':', '-');
+      anchor.href = url;
+      anchor.download = `inventory-${timestamp}.csv`;
+      anchor.rel = 'noopener';
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      window.setTimeout(() => {
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+      }, 1500);
+      setInventoryImportError('');
+      setInventoryImportMessage('Inventory CSV exported successfully.');
+    } catch (error) {
+      setInventoryImportMessage('');
+      setInventoryImportError(error?.message || 'Failed to export inventory CSV.');
+    }
+  };
+
+  const inventoryTemplateRows = [
+    {
+      'Item ID': '',
+      Title: 'Sample Title',
+      Artist: 'Sample Artist',
+      Year: '2026',
+      Category: categoryOptions[0] || 'Painting',
+      Medium: 'Oil on Canvas',
+      Dimensions: '24 x 36 in',
+      Place: 'Makati',
+      'Storage Location': 'Wall 1',
+      Status: 'Available',
+      Price: '50000',
+      Notes: 'Sample note',
+      'Image URL': 'https://example.com/sample.jpg',
+      'Inventory State': 'Active',
+    },
+  ];
+
+  const handleDownloadInventoryTemplateExcel = () => {
+    try {
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(inventoryTemplateRows);
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventory Template');
+      const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'inventory-template.xlsx';
+      anchor.rel = 'noopener';
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      window.setTimeout(() => {
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+      }, 1500);
+      setInventoryImportError('');
+      setInventoryImportMessage('Inventory Excel template downloaded.');
+    } catch (error) {
+      setInventoryImportMessage('');
+      setInventoryImportError(error?.message || 'Failed to download inventory template.');
+    }
+  };
+
+  const handleDownloadInventoryTemplateCsv = () => {
+    try {
+      const header = Object.keys(inventoryTemplateRows[0]);
+      const rows = inventoryTemplateRows.map((row) => header.map((key) => row[key]));
+      const csv = [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'inventory-template.csv';
+      anchor.rel = 'noopener';
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      window.setTimeout(() => {
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+      }, 1500);
+      setInventoryImportError('');
+      setInventoryImportMessage('Inventory CSV template downloaded.');
+    } catch (error) {
+      setInventoryImportMessage('');
+      setInventoryImportError(error?.message || 'Failed to download inventory template.');
+    }
+  };
+
+  const normalizeImportCell = (row, keys) => {
+    for (const key of keys) {
+      if (row[key] !== undefined && row[key] !== null) {
+        return String(row[key]).trim();
+      }
+    }
+    return '';
+  };
+
+  const handleImportInventoryExcel = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsInventoryImporting(true);
+    setInventoryImportMessage('');
+    setInventoryImportError('');
+
+    try {
+      const fileName = String(file.name || '').toLowerCase();
+      const isCsv = fileName.endsWith('.csv');
+      const workbook = isCsv
+        ? XLSX.read(await file.text(), { type: 'string' })
+        : XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) {
+        throw new Error('The Excel file has no sheets.');
+      }
+
+      const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+      if (!rows.length) {
+        throw new Error('The Excel file is empty.');
+      }
+
+      let createdCount = 0;
+      let updatedCount = 0;
+      let skippedCount = 0;
+
+      for (const row of rows) {
+        const itemId = normalizeImportCell(row, ['Item ID', 'id', '_id']);
+        const title = normalizeImportCell(row, ['Title', 'title']);
+        const artist = normalizeImportCell(row, ['Artist', 'artist']);
+
+        if (!title || !artist) {
+          skippedCount += 1;
+          continue;
+        }
+
+        const payload = {
+          title,
+          artist,
+          year: normalizeImportCell(row, ['Year', 'year']),
+          category: normalizeImportCell(row, ['Category', 'category']),
+          medium: normalizeImportCell(row, ['Medium', 'medium']),
+          dimensions: normalizeImportCell(row, ['Dimensions', 'dimensions']),
+          place: normalizeImportCell(row, ['Place', 'place']),
+          storageLocation: normalizeImportCell(row, ['Storage Location', 'storageLocation', 'storage location']),
+          status: normalizeImportCell(row, ['Status', 'status']) || 'Available',
+          price: normalizeImportCell(row, ['Price', 'price']),
+          notes: normalizeImportCell(row, ['Notes', 'notes']),
+          imageUrl: normalizeImportCell(row, ['Image URL', 'imageUrl', 'image url']),
+        };
+
+        const response = await fetch(itemId ? `${API_BASE}/artworks/${itemId}` : `${API_BASE}/artworks`, {
+          method: itemId ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          skippedCount += 1;
+          continue;
+        }
+
+        if (itemId) {
+          updatedCount += 1;
+        } else {
+          createdCount += 1;
+        }
+      }
+
+      const refreshedInventory = await fetchInventory(session);
+      setInventory(refreshedInventory);
+      setInventoryImportMessage(
+        `Import complete. Created: ${createdCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}.`
+      );
+      setApiError('');
+    } catch (error) {
+      setInventoryImportError(error.message || 'Failed to import inventory file.');
+    } finally {
+      setIsInventoryImporting(false);
+      event.target.value = '';
+    }
+  };
+
   const resetCategoryForm = () => {
     setEditingCategoryId('');
     setCategoryName('');
@@ -1097,6 +1441,19 @@ function App() {
   const totalSculptureValue = useMemo(
     () => sculptureOnlyItems.reduce((sum, item) => sum + Number(item.price || 0), 0),
     [sculptureOnlyItems]
+  );
+
+  const categoryStats = useMemo(
+    () =>
+      categoryOptions.map((category) => {
+        const items = inventory.filter((item) => item.category === category);
+        return {
+          name: category,
+          count: items.length,
+          value: items.reduce((sum, item) => sum + Number(item.price || 0), 0),
+        };
+      }).filter((category) => category.count > 0),
+    [categoryOptions, inventory]
   );
 
   const handleSubmit = async (form) => {
@@ -2334,54 +2691,40 @@ function App() {
         ) : (
         <>
       <section className="stats-row">
-        <button
-          type="button"
-          className={`panel stat stat-button ${getMobileStatCardClass(0)}`}
-          onClick={() => {
-            setIsTotalsOpen(true);
-            setIsSculptureTotalsOpen(false);
-          }}
-        >
-          <span className="stat-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path
-                d="M5 19V8.8a1 1 0 0 1 .42-.82l5.5-4a1 1 0 0 1 1.16 0l5.5 4a1 1 0 0 1 .42.82V19M9 19v-5h6v5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
-          <span>Total Painting</span>
-          <strong>{totalPaintingCount.toLocaleString()}</strong>
-          <small className="stat-subvalue">Est. {formatPhp(totalPaintingValue)}</small>
-        </button>
-        <button
-          type="button"
-          className={`panel stat stat-button ${getMobileStatCardClass(1)}`}
-          onClick={() => {
-            setIsSculptureTotalsOpen(true);
-            setIsTotalsOpen(false);
-          }}
-        >
-          <span className="stat-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path
-                d="M7 5h10l2 4-2 10H7L5 9l2-4Zm2.2 4.5h5.6M10 9l.8 6m2.4-6-.8 6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
-          <span>Sculpture</span>
-          <strong>{totalSculptureCount.toLocaleString()}</strong>
-          <small className="stat-subvalue">Est. {formatPhp(totalSculptureValue)}</small>
-        </button>
+        {categoryStats.map((categoryStat, index) => (
+          <button
+            type="button"
+            key={categoryStat.name}
+            className={`panel stat stat-button ${getMobileStatCardClass(index)}`}
+            onClick={() => {
+              if (categoryStat.name === 'Painting') {
+                setIsTotalsOpen(true);
+                setIsSculptureTotalsOpen(false);
+                return;
+              }
+
+              if (categoryStat.name === 'Sculpture') {
+                setIsSculptureTotalsOpen(true);
+                setIsTotalsOpen(false);
+                return;
+              }
+
+              setCurrentPage('inventory');
+              setCategoryFilter(categoryStat.name);
+              setSearch('');
+              setStatusFilter('All');
+              setPlaceFilter('All');
+              setCurrentPageNumber(1);
+            }}
+          >
+            <span className="stat-icon" aria-hidden="true">
+              {getCategoryStatIcon(categoryStat.name)}
+            </span>
+            <span>{categoryStat.name}</span>
+            <strong>{categoryStat.count.toLocaleString()}</strong>
+            <small className="stat-subvalue">Est. {formatPhp(categoryStat.value)}</small>
+          </button>
+        ))}
         <article className={`panel stat ${getMobileStatCardClass(2)}`}>
           <span className="stat-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
@@ -3160,6 +3503,13 @@ function App() {
                 >
                   Categories
                 </button>
+                <button
+                  type="button"
+                  className={adminSection === 'inventory_excel' ? 'active' : ''}
+                  onClick={() => setAdminSection('inventory_excel')}
+                >
+                  Inventory Excel
+                </button>
               </nav>
             </aside>
 
@@ -3373,8 +3723,55 @@ function App() {
                     </div>
                   ) : null}
                 </article>
-              ) : (
+              ) : adminSection === 'categories' ? (
                 categorySectionContent
+              ) : (
+                <article className="panel controls">
+                  <div className="heading-row">
+                    <h2>Inventory Excel</h2>
+                  </div>
+                  <p className="muted">
+                    Import inventory from Excel or export the current inventory to an Excel file.
+                  </p>
+                  <div className="inventory-excel-grid">
+                    <div className="inventory-excel-card">
+                      <h3>Import Inventory</h3>
+                      <p className="muted">
+                        Upload an Excel or CSV file with columns like Item ID, Title, Artist, Category, Place, and Price.
+                      </p>
+                      <div className="actions">
+                        <button type="button" className="ghost" onClick={handleDownloadInventoryTemplateExcel}>
+                          Download Excel Template
+                        </button>
+                        <button type="button" className="ghost" onClick={handleDownloadInventoryTemplateCsv}>
+                          Download CSV Template
+                        </button>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        onChange={handleImportInventoryExcel}
+                        disabled={isInventoryImporting}
+                      />
+                      {inventoryImportMessage ? <p className="muted">{inventoryImportMessage}</p> : null}
+                      {inventoryImportError ? <p className="form-error">{inventoryImportError}</p> : null}
+                    </div>
+                    <div className="inventory-excel-card">
+                      <h3>Export Inventory</h3>
+                      <p className="muted">
+                        Download the current inventory list as an Excel file for backup or bulk editing.
+                      </p>
+                      <div className="actions">
+                        <button type="button" onClick={handleExportInventoryExcel} disabled={inventory.length === 0}>
+                          Export Excel
+                        </button>
+                        <button type="button" className="ghost" onClick={handleExportInventoryCsv} disabled={inventory.length === 0}>
+                          Export CSV
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </article>
               )}
             </section>
           </section>

@@ -185,7 +185,7 @@ header p {
   bottom: 0;
   z-index: 41;
   width: min(300px, calc(100vw - 3rem));
-  border-radius: 0 24px 24px 0;
+  border-radius: 0;
   padding: 0 0 1rem;
   background: #ffffff;
   box-shadow: 18px 0 40px rgba(16, 32, 36, 0.18);
@@ -403,7 +403,7 @@ header p {
 
 .stat span {
   display: block;
-  color: #5b6a6d;
+  color: #ffffff;
   font-size: 0.9rem;
 }
 
@@ -431,19 +431,17 @@ header p {
   display: block;
   margin-top: 0.2rem;
   font-size: 0.86rem;
-  color: #4d5d5f;
+  color: #ffffff;
 }
 
 .stat-button {
   text-align: left;
   width: 100%;
-  color: #1f2a2b;
-  background: #ffffff;
-  border: 1px solid #d8e0e1;
+  color: #ffffff;
 }
 
 .stat-button strong {
-  color: #1f2a2b;
+  color: #ffffff;
 }
 
 .mobile-stat-lime {
@@ -764,6 +762,24 @@ button.danger {
   justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
+}
+
+.inventory-excel-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.inventory-excel-card {
+  border: 1px solid #d8e0e1;
+  border-radius: 12px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.inventory-excel-card h3 {
+  margin: 0;
 }
 
 .audit-table-wrap {
