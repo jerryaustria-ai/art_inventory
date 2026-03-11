@@ -2745,22 +2745,6 @@ function App() {
             <small className="stat-subvalue">Est. {formatPhp(categoryStat.value)}</small>
           </button>
         ))}
-        <article className={`panel stat ${getMobileStatCardClass(2)}`}>
-          <span className="stat-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path
-                d="M12 3v18M16.5 7.5c0-1.7-1.8-3-4.5-3s-4.5 1.3-4.5 3 1.8 3 4.5 3 4.5 1.3 4.5 3-1.8 3-4.5 3-4.5-1.3-4.5-3"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
-          <span>Estimated Value</span>
-          <strong>{formatPhp(totalValue)}</strong>
-        </article>
       </section>
       <div className="mobile-stats-divider" aria-hidden="true" />
       {hasActiveFilters ? (
