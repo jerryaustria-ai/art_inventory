@@ -634,6 +634,8 @@ function App() {
   const isPictureOnly = displayMode === 'image';
   const canManage = session?.role === 'admin' || session?.role === 'super admin';
   const canOpenAdminPage = session?.role === 'super admin';
+  const isOverlayLoading =
+    isLoading || isUsersLoading || isAuditLoading || isCategoriesLoading || isInventoryImporting;
 
   const editingItem = inventory.find((item) => item.id === editingId) || null;
   const editingUser = users.find((user) => user.id === editingUserId) || null;
@@ -649,6 +651,16 @@ function App() {
     ]);
     return Array.from(values).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [categories, inventory, editingItem]);
+
+  const loadingOverlayMessage = isInventoryImporting
+    ? 'Importing inventory...'
+    : isAuditLoading
+      ? 'Loading audit trail...'
+      : isUsersLoading
+        ? 'Loading users...'
+        : isCategoriesLoading
+          ? 'Loading categories...'
+          : 'Loading...';
 
   const fetchInventory = async (activeSession = session) => {
     const isSuperAdmin = activeSession?.role === 'super admin';
@@ -2320,6 +2332,14 @@ function App() {
 
   return (
     <main className="container">
+      {isOverlayLoading ? (
+        <div className="loading-overlay" role="status" aria-live="polite" aria-busy="true">
+          <div className="loading-overlay-card">
+            <div className="loading-spinner" aria-hidden="true" />
+            <strong>{loadingOverlayMessage}</strong>
+          </div>
+        </div>
+      ) : null}
       {!isMobileFormPage && !isMobileDetailsPage ? (
       <header>
         <div className="mobile-header-top">
