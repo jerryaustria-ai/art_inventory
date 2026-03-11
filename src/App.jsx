@@ -136,7 +136,7 @@ function getMobileStatCardClass(index) {
   return classes[index % classes.length];
 }
 
-function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false }) {
+function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, categories = [] }) {
   const [form, setForm] = useState(editingItem || blankForm);
   const [formError, setFormError] = useState('');
 
@@ -188,9 +188,11 @@ function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false }) {
         Artwork Category
         <select name="category" value={form.category} onChange={handleChange}>
           <option value="">Select category</option>
-          <option value="Painting">Painting</option>
-          <option value="Sculpture">Sculpture</option>
-          <option value="Digital">Digital</option>
+          {categories.map((category) => (
+            <option key={category} value={category}>
+              {category}
+            </option>
+          ))}
         </select>
       </label>
       <label>
@@ -509,9 +511,14 @@ function App() {
   const [inventory, setInventory] = useState([]);
   const [users, setUsers] = useState([]);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [isCategoriesLoading, setIsCategoriesLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [auditActionFilter, setAuditActionFilter] = useState('all');
+  const [adminSection, setAdminSection] = useState('users');
+  const [editingCategoryId, setEditingCategoryId] = useState('');
+  const [categoryName, setCategoryName] = useState('');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -524,6 +531,10 @@ function App() {
   const [sortBy, setSortBy] = useState('title');
   const [itemsPerPage, setItemsPerPage] = useState(20);
   const [currentPageNumber, setCurrentPageNumber] = useState(1);
+  const [userItemsPerPage, setUserItemsPerPage] = useState(20);
+  const [userPageNumber, setUserPageNumber] = useState(1);
+  const [auditItemsPerPage, setAuditItemsPerPage] = useState(20);
+  const [auditPageNumber, setAuditPageNumber] = useState(1);
   const [editingId, setEditingId] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [returnDetailsId, setReturnDetailsId] = useState('');
@@ -533,6 +544,7 @@ function App() {
   const [isTotalsOpen, setIsTotalsOpen] = useState(false);
   const [isSculptureTotalsOpen, setIsSculptureTotalsOpen] = useState(false);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
+  const [isMobileAdminMenuOpen, setIsMobileAdminMenuOpen] = useState(false);
   const [viewerId, setViewerId] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
@@ -563,6 +575,14 @@ function App() {
   const viewerItem = inventory.find((item) => item.id === viewerId) || null;
   const isMobileFormPage = isMobileViewport && isFormOpen;
   const isMobileDetailsPage = isMobileViewport && !!selectedItem;
+  const categoryOptions = useMemo(() => {
+    const values = new Set([
+      ...categories.map((item) => item.name).filter(Boolean),
+      ...inventory.map((item) => item.category).filter(Boolean),
+      editingItem?.category || '',
+    ]);
+    return Array.from(values).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [categories, inventory, editingItem]);
 
   const fetchInventory = async (activeSession = session) => {
     const isSuperAdmin = activeSession?.role === 'super admin';
@@ -630,14 +650,15 @@ function App() {
     if (!session) {
       setIsLoading(false);
       setInventory([]);
+      setCategories([]);
       return;
     }
 
     let isMounted = true;
 
-    const loadInventory = async () => {
+    const loadAppData = async () => {
       try {
-        const data = await fetchInventory(session);
+        const [data] = await Promise.all([fetchInventory(session), fetchCategories()]);
         if (!isMounted) return;
         setInventory(data);
         setApiError('');
@@ -649,7 +670,7 @@ function App() {
       }
     };
 
-    loadInventory();
+    loadAppData();
 
     return () => {
       isMounted = false;
@@ -716,6 +737,29 @@ function App() {
     }
   };
 
+  const fetchCategories = async () => {
+    setIsCategoriesLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/categories`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch categories');
+      }
+      const data = await response.json();
+      const normalized = Array.isArray(data)
+        ? data.map((item) => ({
+            id: item._id || item.id,
+            name: item.name || '',
+          }))
+        : [];
+      setCategories(normalized);
+      setApiError('');
+    } catch {
+      setApiError('Failed to load categories.');
+    } finally {
+      setIsCategoriesLoading(false);
+    }
+  };
+
   const fetchAuditLogs = async (action = auditActionFilter) => {
     if (session?.role !== 'super admin') return;
 
@@ -770,6 +814,92 @@ function App() {
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
+  };
+
+  const resetCategoryForm = () => {
+    setEditingCategoryId('');
+    setCategoryName('');
+  };
+
+  const handleSubmitCategory = async (event) => {
+    event.preventDefault();
+    const trimmedName = categoryName.trim();
+    const previousCategoryName = categories.find((item) => item.id === editingCategoryId)?.name || '';
+    if (!trimmedName) {
+      setApiError('Category name is required.');
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        editingCategoryId ? `${API_BASE}/categories/${editingCategoryId}` : `${API_BASE}/categories`,
+        {
+          method: editingCategoryId ? 'PUT' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-actor-id': session?.id || '',
+            'x-actor-email': session?.email || '',
+            'x-actor-role': session?.role || '',
+          },
+          body: JSON.stringify({ name: trimmedName }),
+        }
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || 'Failed to save category.');
+      }
+
+      await fetchCategories();
+      const refreshedInventory = await fetchInventory(session);
+      setInventory(refreshedInventory);
+      if (editingCategoryId && categoryFilter === previousCategoryName) {
+        setCategoryFilter(trimmedName);
+      }
+      resetCategoryForm();
+      setApiError('');
+    } catch (error) {
+      setApiError(error.message || 'Failed to save category.');
+    }
+  };
+
+  const handleEditCategory = (category) => {
+    setEditingCategoryId(category.id);
+    setCategoryName(category.name);
+  };
+
+  const handleDeleteCategory = async (category) => {
+    const confirmed = window.confirm(`Delete category "${category.name}"? Items using it will be set to no category.`);
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/categories/${category.id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-actor-id': session?.id || '',
+          'x-actor-email': session?.email || '',
+          'x-actor-role': session?.role || '',
+        },
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || 'Failed to delete category.');
+      }
+
+      await fetchCategories();
+      const refreshedInventory = await fetchInventory(session);
+      setInventory(refreshedInventory);
+      if (categoryFilter === category.name) {
+        setCategoryFilter('All');
+      }
+      if (editingCategoryId === category.id) {
+        resetCategoryForm();
+      }
+      setApiError('');
+    } catch (error) {
+      setApiError(error.message || 'Failed to delete category.');
+    }
   };
 
   const handleLogin = async (credentials) => {
@@ -876,6 +1006,32 @@ function App() {
     const adjustedStart = Math.max(1, end - 4);
     return Array.from({ length: end - adjustedStart + 1 }, (_, index) => adjustedStart + index);
   }, [currentPageNumber, totalPages]);
+
+  const userTotalPages = Math.max(1, Math.ceil(users.length / userItemsPerPage));
+  const paginatedUsers = useMemo(() => {
+    const startIndex = (userPageNumber - 1) * userItemsPerPage;
+    return users.slice(startIndex, startIndex + userItemsPerPage);
+  }, [users, userPageNumber, userItemsPerPage]);
+
+  const visibleUserPageNumbers = useMemo(() => {
+    const start = Math.max(1, userPageNumber - 2);
+    const end = Math.min(userTotalPages, start + 4);
+    const adjustedStart = Math.max(1, end - 4);
+    return Array.from({ length: end - adjustedStart + 1 }, (_, index) => adjustedStart + index);
+  }, [userPageNumber, userTotalPages]);
+
+  const auditTotalPages = Math.max(1, Math.ceil(auditLogs.length / auditItemsPerPage));
+  const paginatedAuditLogs = useMemo(() => {
+    const startIndex = (auditPageNumber - 1) * auditItemsPerPage;
+    return auditLogs.slice(startIndex, startIndex + auditItemsPerPage);
+  }, [auditLogs, auditPageNumber, auditItemsPerPage]);
+
+  const visibleAuditPageNumbers = useMemo(() => {
+    const start = Math.max(1, auditPageNumber - 2);
+    const end = Math.min(auditTotalPages, start + 4);
+    const adjustedStart = Math.max(1, end - 4);
+    return Array.from({ length: end - adjustedStart + 1 }, (_, index) => adjustedStart + index);
+  }, [auditPageNumber, auditTotalPages]);
 
   const paintingsByPlace = useMemo(() => {
     const counts = inventory.reduce((accumulator, item) => {
@@ -1137,6 +1293,26 @@ function App() {
       setCurrentPageNumber(totalPages);
     }
   }, [currentPageNumber, totalPages]);
+
+  useEffect(() => {
+    setUserPageNumber(1);
+  }, [userItemsPerPage]);
+
+  useEffect(() => {
+    if (userPageNumber > userTotalPages) {
+      setUserPageNumber(userTotalPages);
+    }
+  }, [userPageNumber, userTotalPages]);
+
+  useEffect(() => {
+    setAuditPageNumber(1);
+  }, [auditItemsPerPage, auditActionFilter]);
+
+  useEffect(() => {
+    if (auditPageNumber > auditTotalPages) {
+      setAuditPageNumber(auditTotalPages);
+    }
+  }, [auditPageNumber, auditTotalPages]);
 
   useEffect(() => {
     if (
@@ -1473,6 +1649,47 @@ function App() {
       </div>
     </>
   ) : null;
+
+  const categorySectionContent = (
+    <article className="panel controls">
+      <div className="heading-row">
+        <h2>Categories</h2>
+      </div>
+      <form className="category-manager-form" onSubmit={handleSubmitCategory}>
+        <input
+          type="text"
+          value={categoryName}
+          onChange={(event) => setCategoryName(event.target.value)}
+          placeholder="Enter category name"
+        />
+        <div className="actions">
+          <button type="submit">{editingCategoryId ? 'Update Category' : 'Add Category'}</button>
+          {editingCategoryId ? (
+            <button type="button" className="ghost" onClick={resetCategoryForm}>
+              Cancel
+            </button>
+          ) : null}
+        </div>
+      </form>
+      {isCategoriesLoading ? <p className="muted">Loading categories...</p> : null}
+      <div className="user-list">
+        {categories.length === 0 ? <p>No categories found.</p> : null}
+        {categories.map((category) => (
+          <article className="category-item" key={category.id}>
+            <strong>{category.name}</strong>
+            <div className="actions">
+              <button type="button" onClick={() => handleEditCategory(category)}>
+                Edit
+              </button>
+              <button type="button" className="danger" onClick={() => handleDeleteCategory(category)}>
+                Delete
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </article>
+  );
 
   const handleImagePointerDown = (event) => {
     if (imageZoom <= 1) return;
@@ -1861,7 +2078,9 @@ function App() {
                 className={currentPage === 'admin' ? '' : 'ghost'}
                 onClick={() => {
                   setCurrentPage('admin');
+                  setAdminSection('users');
                   fetchUsers();
+                  fetchCategories();
                   fetchAuditLogs(auditActionFilter);
                 }}
               >
@@ -1941,24 +2160,76 @@ function App() {
                 </button>
               ) : null}
               {canOpenAdminPage ? (
-                <button
-                  type="button"
-                  className={`mobile-menu-item ${currentPage === 'admin' ? '' : 'ghost'}`}
-                  onClick={() => {
-                    setCurrentPage('admin');
-                    setIsMobileMenuOpen(false);
-                    fetchUsers();
-                    fetchAuditLogs(auditActionFilter);
-                  }}
-                >
-                  <span className="mobile-menu-item-main">
-                    <span className="mobile-menu-icon">##</span>
-                    <span>Admin Page</span>
-                  </span>
-                  <span className="mobile-menu-chevron" aria-hidden="true">
-                    ›
-                  </span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="mobile-menu-parent-label"
+                    onClick={() => setIsMobileAdminMenuOpen((previous) => !previous)}
+                    aria-expanded={isMobileAdminMenuOpen}
+                  >
+                    <span className="mobile-menu-item-main">
+                      <span className="mobile-menu-icon">##</span>
+                      <span>Admin Page</span>
+                    </span>
+                    <span
+                      className={`mobile-menu-chevron mobile-menu-chevron-toggle ${isMobileAdminMenuOpen ? 'open' : ''}`}
+                      aria-hidden="true"
+                    >
+                      ›
+                    </span>
+                  </button>
+                  {isMobileAdminMenuOpen ? (
+                    <>
+                      <button
+                        type="button"
+                        className={`mobile-menu-subitem ${currentPage === 'admin' && adminSection === 'users' ? '' : 'ghost'}`}
+                        onClick={() => {
+                          setCurrentPage('admin');
+                          setAdminSection('users');
+                          setIsMobileMenuOpen(false);
+                          fetchUsers();
+                          fetchCategories();
+                        }}
+                      >
+                        <span>Users</span>
+                        <span className="mobile-menu-chevron" aria-hidden="true">
+                          ›
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`mobile-menu-subitem ${currentPage === 'admin' && adminSection === 'audit' ? '' : 'ghost'}`}
+                        onClick={() => {
+                          setCurrentPage('admin');
+                          setAdminSection('audit');
+                          setIsMobileMenuOpen(false);
+                          fetchCategories();
+                          fetchAuditLogs(auditActionFilter);
+                        }}
+                      >
+                        <span>Audit Trail</span>
+                        <span className="mobile-menu-chevron" aria-hidden="true">
+                          ›
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`mobile-menu-subitem ${currentPage === 'admin' && adminSection === 'categories' ? '' : 'ghost'}`}
+                        onClick={() => {
+                          setCurrentPage('admin');
+                          setAdminSection('categories');
+                          setIsMobileMenuOpen(false);
+                          fetchCategories();
+                        }}
+                      >
+                        <span>Categories</span>
+                        <span className="mobile-menu-chevron" aria-hidden="true">
+                          ›
+                        </span>
+                      </button>
+                    </>
+                  ) : null}
+                </>
               ) : null}
               <button
                 type="button"
@@ -2017,6 +2288,7 @@ function App() {
               editingItem={editingItem}
               onCancel={handleCloseForm}
               hideTitle
+              categories={categoryOptions}
             />
           </section>
         ) : isMobileDetailsPage ? (
@@ -2150,9 +2422,11 @@ function App() {
           </select>
           <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
             <option value="All">All Categories</option>
-            <option value="Painting">Painting</option>
-            <option value="Sculpture">Sculpture</option>
-            <option value="Digital">Digital</option>
+            {categoryOptions.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
             <option value="Unassigned">Unassigned</option>
           </select>
           <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
@@ -2354,7 +2628,12 @@ function App() {
             <button type="button" className="modal-close" onClick={handleCloseForm} aria-label="Close">
               ×
             </button>
-            <InventoryForm onSubmit={handleSubmit} editingItem={editingItem} onCancel={handleCloseForm} />
+            <InventoryForm
+              onSubmit={handleSubmit}
+              editingItem={editingItem}
+              onCancel={handleCloseForm}
+              categories={categoryOptions}
+            />
           </section>
         </div>
       ) : null}
@@ -2397,9 +2676,11 @@ function App() {
                 Category
                 <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
                   <option value="All">All Categories</option>
-                  <option value="Painting">Painting</option>
-                  <option value="Sculpture">Sculpture</option>
-                  <option value="Digital">Digital</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
                   <option value="Unassigned">Unassigned</option>
                 </select>
               </label>
@@ -2616,110 +2897,469 @@ function App() {
       ) : null}
 
       {currentPage === 'admin' && canOpenAdminPage ? (
-        <section className="controls">
-          <article className="panel controls">
-            <div className="heading-row">
-              <h2>User Management</h2>
-              <button type="button" onClick={openAddUserModal}>
-                Add User
-              </button>
-            </div>
-            {isUsersLoading ? <p className="muted">Loading users...</p> : null}
-            <div className="user-list">
-              {users.length === 0 ? <p>No users found.</p> : null}
-              {users.map((user) => (
-                <article className="user-item" key={user.id}>
-                  <div>
-                    <strong>{user.name}</strong>
-                    <p className="muted">{user.email}</p>
-                    <p>
-                      <strong>Role:</strong> {user.role}
-                    </p>
-                    <p>
-                      <strong>Status:</strong> {user.status}
-                    </p>
+        isMobileViewport ? (
+          <section className="controls">
+            {adminSection === 'users' ? (
+              <article className="panel controls">
+                <div className="heading-row">
+                  <h2>User Management</h2>
+                  <button type="button" onClick={openAddUserModal}>
+                    Add User
+                  </button>
+                </div>
+                {isUsersLoading ? <p className="muted">Loading users...</p> : null}
+                <div className="user-list">
+                  {users.length === 0 ? <p>No users found.</p> : null}
+                  {paginatedUsers.map((user) => (
+                    <article className="user-item" key={user.id}>
+                      <div>
+                        <strong>{user.name}</strong>
+                        <p className="muted">{user.email}</p>
+                        <p>
+                          <strong>Role:</strong> {user.role}
+                        </p>
+                        <p>
+                          <strong>Status:</strong> {user.status}
+                        </p>
+                      </div>
+                      <div className="actions">
+                        <button
+                          type="button"
+                          onClick={() => openEditUserModal(user.id)}
+                          disabled={user.role === 'super admin' && session?.role !== 'super admin'}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => handleDeleteUser(user.id)}
+                          disabled={user.role === 'super admin' && session?.role !== 'super admin'}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                {users.length > 0 ? (
+                  <div className="pagination-bar">
+                    {users.length > userItemsPerPage ? (
+                      <div className="pagination-controls">
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => setUserPageNumber((previous) => Math.max(1, previous - 1))}
+                          disabled={userPageNumber === 1}
+                        >
+                          Prev
+                        </button>
+                        <div className="pagination-pages">
+                          {visibleUserPageNumbers.map((pageNumber) => (
+                            <button
+                              type="button"
+                              key={pageNumber}
+                              className={pageNumber === userPageNumber ? '' : 'ghost'}
+                              onClick={() => setUserPageNumber(pageNumber)}
+                            >
+                              {pageNumber}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => setUserPageNumber((previous) => Math.min(userTotalPages, previous + 1))}
+                          disabled={userPageNumber === userTotalPages}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    ) : (
+                      <div />
+                    )}
+                    <label className="pagination-size">
+                      Items per page
+                      <select value={userItemsPerPage} onChange={(event) => setUserItemsPerPage(Number(event.target.value))}>
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={30}>30</option>
+                        <option value={40}>40</option>
+                        <option value={50}>50</option>
+                        <option value={60}>60</option>
+                        <option value={70}>70</option>
+                        <option value={80}>80</option>
+                        <option value={90}>90</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </label>
                   </div>
+                ) : null}
+              </article>
+            ) : adminSection === 'audit' ? (
+              <article className="panel controls">
+                <div className="heading-row">
+                  <h2>Audit Logs</h2>
                   <div className="actions">
-                    <button
-                      type="button"
-                      onClick={() => openEditUserModal(user.id)}
-                      disabled={user.role === 'super admin' && session?.role !== 'super admin'}
+                    <select
+                      value={auditActionFilter}
+                      onChange={(event) => {
+                        const nextAction = event.target.value;
+                        setAuditActionFilter(nextAction);
+                        fetchAuditLogs(nextAction);
+                      }}
                     >
-                      Edit
+                      <option value="all">All Actions</option>
+                      <option value="user.login">User Login</option>
+                      <option value="inventory.deactivate">Inventory Deactivate</option>
+                      <option value="inventory.activate">Inventory Activate</option>
+                      <option value="inventory.delete_permanent">Inventory Permanent Delete</option>
+                    </select>
+                    <button type="button" className="ghost" onClick={() => fetchAuditLogs(auditActionFilter)}>
+                      Refresh
                     </button>
-                    <button
-                      type="button"
-                      className="danger"
-                      onClick={() => handleDeleteUser(user.id)}
-                      disabled={user.role === 'super admin' && session?.role !== 'super admin'}
-                    >
-                      Delete
+                    <button type="button" onClick={handleExportAuditCsv} disabled={auditLogs.length === 0}>
+                      Export CSV
                     </button>
                   </div>
-                </article>
-              ))}
-            </div>
-          </article>
-
-          <article className="panel controls">
-            <div className="heading-row">
-              <h2>Audit Logs</h2>
-              <div className="actions">
-                <select
-                  value={auditActionFilter}
-                  onChange={(event) => {
-                    const nextAction = event.target.value;
-                    setAuditActionFilter(nextAction);
-                    fetchAuditLogs(nextAction);
+                </div>
+                {isAuditLoading ? <p className="muted">Loading audit logs...</p> : null}
+                <div className="audit-table-wrap">
+                  <table className="audit-table">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Action</th>
+                        <th>Actor</th>
+                        <th>Target</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLogs.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="muted">
+                            No audit logs found.
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedAuditLogs.map((log) => (
+                          <tr key={log._id}>
+                            <td>{formatDateTime(log.createdAt)}</td>
+                            <td>{log.action || 'N/A'}</td>
+                            <td>{log.actor?.email || log.actor?.id || 'N/A'}</td>
+                            <td>{log.target?.label || log.target?.id || 'N/A'}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {auditLogs.length > 0 ? (
+                  <div className="pagination-bar">
+                    {auditLogs.length > auditItemsPerPage ? (
+                      <div className="pagination-controls">
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => setAuditPageNumber((previous) => Math.max(1, previous - 1))}
+                          disabled={auditPageNumber === 1}
+                        >
+                          Prev
+                        </button>
+                        <div className="pagination-pages">
+                          {visibleAuditPageNumbers.map((pageNumber) => (
+                            <button
+                              type="button"
+                              key={pageNumber}
+                              className={pageNumber === auditPageNumber ? '' : 'ghost'}
+                              onClick={() => setAuditPageNumber(pageNumber)}
+                            >
+                              {pageNumber}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => setAuditPageNumber((previous) => Math.min(auditTotalPages, previous + 1))}
+                          disabled={auditPageNumber === auditTotalPages}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    ) : (
+                      <div />
+                    )}
+                    <label className="pagination-size">
+                      Items per page
+                      <select value={auditItemsPerPage} onChange={(event) => setAuditItemsPerPage(Number(event.target.value))}>
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={30}>30</option>
+                        <option value={40}>40</option>
+                        <option value={50}>50</option>
+                        <option value={60}>60</option>
+                        <option value={70}>70</option>
+                        <option value={80}>80</option>
+                        <option value={90}>90</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </label>
+                  </div>
+                ) : null}
+              </article>
+            ) : (
+              categorySectionContent
+            )}
+          </section>
+        ) : (
+          <section className="admin-layout">
+            <aside className="panel admin-sidebar" aria-label="Admin navigation">
+              <h2>Admin</h2>
+              <nav className="admin-sidebar-nav">
+                <button
+                  type="button"
+                  className={adminSection === 'users' ? 'active' : ''}
+                  onClick={() => setAdminSection('users')}
+                >
+                  Users
+                </button>
+                <button
+                  type="button"
+                  className={adminSection === 'audit' ? 'active' : ''}
+                  onClick={() => setAdminSection('audit')}
+                >
+                  Audit Trail
+                </button>
+                <button
+                  type="button"
+                  className={adminSection === 'categories' ? 'active' : ''}
+                  onClick={() => {
+                    setAdminSection('categories');
+                    fetchCategories();
                   }}
                 >
-                  <option value="all">All Actions</option>
-                  <option value="user.login">User Login</option>
-                  <option value="inventory.deactivate">Inventory Deactivate</option>
-                  <option value="inventory.activate">Inventory Activate</option>
-                  <option value="inventory.delete_permanent">Inventory Permanent Delete</option>
-                </select>
-                <button type="button" className="ghost" onClick={() => fetchAuditLogs(auditActionFilter)}>
-                  Refresh
+                  Categories
                 </button>
-                <button type="button" onClick={handleExportAuditCsv} disabled={auditLogs.length === 0}>
-                  Export CSV
-                </button>
-              </div>
-            </div>
-            {isAuditLoading ? <p className="muted">Loading audit logs...</p> : null}
-            <div className="audit-table-wrap">
-              <table className="audit-table">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Action</th>
-                    <th>Actor</th>
-                    <th>Target</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditLogs.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="muted">
-                        No audit logs found.
-                      </td>
-                    </tr>
-                  ) : (
-                    auditLogs.map((log) => (
-                      <tr key={log._id}>
-                        <td>{formatDateTime(log.createdAt)}</td>
-                        <td>{log.action || 'N/A'}</td>
-                        <td>{log.actor?.email || log.actor?.id || 'N/A'}</td>
-                        <td>{log.target?.label || log.target?.id || 'N/A'}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </article>
-        </section>
+              </nav>
+            </aside>
+
+            <section className="admin-content">
+              {adminSection === 'users' ? (
+                <article className="panel controls">
+                  <div className="heading-row">
+                    <h2>User Management</h2>
+                    <button type="button" onClick={openAddUserModal}>
+                      Add User
+                    </button>
+                  </div>
+                  {isUsersLoading ? <p className="muted">Loading users...</p> : null}
+                  <div className="user-list">
+                    {users.length === 0 ? <p>No users found.</p> : null}
+                    {paginatedUsers.map((user) => (
+                      <article className="user-item" key={user.id}>
+                        <div>
+                          <strong>{user.name}</strong>
+                          <p className="muted">{user.email}</p>
+                          <p>
+                            <strong>Role:</strong> {user.role}
+                          </p>
+                          <p>
+                            <strong>Status:</strong> {user.status}
+                          </p>
+                        </div>
+                        <div className="actions">
+                          <button
+                            type="button"
+                            onClick={() => openEditUserModal(user.id)}
+                            disabled={user.role === 'super admin' && session?.role !== 'super admin'}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => handleDeleteUser(user.id)}
+                            disabled={user.role === 'super admin' && session?.role !== 'super admin'}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                  {users.length > 0 ? (
+                    <div className="pagination-bar">
+                      {users.length > userItemsPerPage ? (
+                        <div className="pagination-controls">
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => setUserPageNumber((previous) => Math.max(1, previous - 1))}
+                            disabled={userPageNumber === 1}
+                          >
+                            Prev
+                          </button>
+                          <div className="pagination-pages">
+                            {visibleUserPageNumbers.map((pageNumber) => (
+                              <button
+                                type="button"
+                                key={pageNumber}
+                                className={pageNumber === userPageNumber ? '' : 'ghost'}
+                                onClick={() => setUserPageNumber(pageNumber)}
+                              >
+                                {pageNumber}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => setUserPageNumber((previous) => Math.min(userTotalPages, previous + 1))}
+                            disabled={userPageNumber === userTotalPages}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      ) : (
+                        <div />
+                      )}
+                      <label className="pagination-size">
+                        Items per page
+                        <select value={userItemsPerPage} onChange={(event) => setUserItemsPerPage(Number(event.target.value))}>
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={30}>30</option>
+                          <option value={40}>40</option>
+                          <option value={50}>50</option>
+                          <option value={60}>60</option>
+                          <option value={70}>70</option>
+                          <option value={80}>80</option>
+                          <option value={90}>90</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </label>
+                    </div>
+                  ) : null}
+                </article>
+              ) : adminSection === 'audit' ? (
+                <article className="panel controls">
+                  <div className="heading-row">
+                    <h2>Audit Trail</h2>
+                    <div className="actions">
+                      <select
+                        value={auditActionFilter}
+                        onChange={(event) => {
+                          const nextAction = event.target.value;
+                          setAuditActionFilter(nextAction);
+                          fetchAuditLogs(nextAction);
+                        }}
+                      >
+                        <option value="all">All Actions</option>
+                        <option value="user.login">User Login</option>
+                        <option value="inventory.deactivate">Inventory Deactivate</option>
+                        <option value="inventory.activate">Inventory Activate</option>
+                        <option value="inventory.delete_permanent">Inventory Permanent Delete</option>
+                      </select>
+                      <button type="button" className="ghost" onClick={() => fetchAuditLogs(auditActionFilter)}>
+                        Refresh
+                      </button>
+                      <button type="button" onClick={handleExportAuditCsv} disabled={auditLogs.length === 0}>
+                        Export CSV
+                      </button>
+                    </div>
+                  </div>
+                  {isAuditLoading ? <p className="muted">Loading audit logs...</p> : null}
+                  <div className="audit-table-wrap">
+                    <table className="audit-table">
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Action</th>
+                          <th>Actor</th>
+                          <th>Target</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {auditLogs.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="muted">
+                              No audit logs found.
+                            </td>
+                          </tr>
+                        ) : (
+                          paginatedAuditLogs.map((log) => (
+                            <tr key={log._id}>
+                              <td>{formatDateTime(log.createdAt)}</td>
+                              <td>{log.action || 'N/A'}</td>
+                              <td>{log.actor?.email || log.actor?.id || 'N/A'}</td>
+                              <td>{log.target?.label || log.target?.id || 'N/A'}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {auditLogs.length > 0 ? (
+                    <div className="pagination-bar">
+                      {auditLogs.length > auditItemsPerPage ? (
+                        <div className="pagination-controls">
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => setAuditPageNumber((previous) => Math.max(1, previous - 1))}
+                            disabled={auditPageNumber === 1}
+                          >
+                            Prev
+                          </button>
+                          <div className="pagination-pages">
+                            {visibleAuditPageNumbers.map((pageNumber) => (
+                              <button
+                                type="button"
+                                key={pageNumber}
+                                className={pageNumber === auditPageNumber ? '' : 'ghost'}
+                                onClick={() => setAuditPageNumber(pageNumber)}
+                              >
+                                {pageNumber}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => setAuditPageNumber((previous) => Math.min(auditTotalPages, previous + 1))}
+                            disabled={auditPageNumber === auditTotalPages}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      ) : (
+                        <div />
+                      )}
+                      <label className="pagination-size">
+                        Items per page
+                        <select value={auditItemsPerPage} onChange={(event) => setAuditItemsPerPage(Number(event.target.value))}>
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={30}>30</option>
+                          <option value={40}>40</option>
+                          <option value={50}>50</option>
+                          <option value={60}>60</option>
+                          <option value={70}>70</option>
+                          <option value={80}>80</option>
+                          <option value={90}>90</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </label>
+                    </div>
+                  ) : null}
+                </article>
+              ) : (
+                categorySectionContent
+              )}
+            </section>
+          </section>
+        )
       ) : null}
 
       {isUserModalOpen ? (
@@ -2748,7 +3388,9 @@ function App() {
               className={currentPage === 'admin' ? 'active' : ''}
               onClick={() => {
                 setCurrentPage('admin');
+                setAdminSection('users');
                 fetchUsers();
+                fetchCategories();
                 fetchAuditLogs(auditActionFilter);
               }}
             >

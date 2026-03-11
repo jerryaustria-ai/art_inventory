@@ -281,6 +281,18 @@ header p {
   color: #1f2a2b;
 }
 
+.mobile-menu-parent-label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0.7rem;
+  padding: 0.8rem 0.55rem 0.25rem;
+  background: transparent;
+  color: #1f2a2b;
+  text-align: left;
+}
+
 .mobile-menu-item.ghost {
   background: transparent;
   color: #1f2a2b;
@@ -312,6 +324,30 @@ header p {
   width: 1.5rem;
   text-align: center;
   justify-self: end;
+}
+
+.mobile-menu-chevron-toggle {
+  transition: transform 160ms ease;
+}
+
+.mobile-menu-chevron-toggle.open {
+  transform: rotate(90deg);
+}
+
+.mobile-menu-subitem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  margin: -0.15rem 0.7rem 0 4.6rem;
+  padding: 0.45rem 0 0.45rem 0.35rem;
+  background: transparent;
+  color: #4e5d60;
+  font-size: 0.95rem;
+}
+
+.mobile-menu-subitem.ghost {
+  color: #4e5d60;
 }
 
 @keyframes slideDrawerIn {
@@ -715,6 +751,21 @@ button.danger {
   gap: 0.75rem;
 }
 
+.category-manager-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.category-item {
+  border: 1px solid #d8e0e1;
+  border-radius: 12px;
+  padding: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .audit-table-wrap {
   overflow: auto;
   border: 1px solid #d8e0e1;
@@ -741,6 +792,47 @@ button.danger {
   background: #f4f8f9;
   color: #314244;
   font-weight: 700;
+}
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-sidebar {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-sidebar h2 {
+  margin: 0;
+}
+
+.admin-sidebar-nav {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.admin-sidebar-nav button {
+  width: 100%;
+  justify-content: flex-start;
+  background: #eef4f5;
+  color: #314244;
+  border: 1px solid #d5dfe1;
+}
+
+.admin-sidebar-nav button.active {
+  background: #177e79;
+  border-color: #177e79;
+  color: #fff;
+}
+
+.admin-content {
+  min-width: 0;
 }
 
 .card {

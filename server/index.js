@@ -4,6 +4,8 @@ import express from 'express'
 import bcrypt from 'bcryptjs'
 import mongoose from 'mongoose'
 import artworksRouter from './routes/artworks.js'
+import categoriesRouter from './routes/categories.js'
+import Category from './models/Category.js'
 import User from './models/User.js'
 import auditLogsRouter from './routes/auditLogs.js'
 import usersRouter from './routes/users.js'
@@ -32,6 +34,7 @@ app.get('/api/health', (_req, res) => {
 })
 
 app.use('/api/artworks', artworksRouter)
+app.use('/api/categories', categoriesRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/audit-logs', auditLogsRouter)
 
@@ -75,6 +78,11 @@ mongoose
         { $setOnInsert: { ...user, password: hashedPassword } },
         { upsert: true },
       )
+    }
+
+    const defaultCategories = ['Painting', 'Sculpture', 'Digital']
+    for (const name of defaultCategories) {
+      await Category.updateOne({ name }, { $setOnInsert: { name } }, { upsert: true })
     }
 
     app.listen(PORT, () => {
