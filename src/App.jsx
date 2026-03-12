@@ -37,6 +37,7 @@ function loadXlsxLib() {
 }
 
 const blankForm = {
+  inventoryId: '',
   title: '',
   artist: '',
   year: '',
@@ -73,6 +74,7 @@ function normalizeArtwork(item) {
   return {
     ...item,
     id: item._id,
+    inventoryId: item.inventoryId || '',
     category: item.category || '',
     place: item.place || '',
     storageLocation: item.storageLocation || '',
@@ -149,6 +151,12 @@ function shortItemId(value) {
   const raw = String(value || '').trim();
   if (!raw) return 'N/A';
   return raw.slice(0, 5);
+}
+
+function getDisplayItemId(item) {
+  const inventoryId = String(item?.inventoryId || '').trim();
+  if (inventoryId) return inventoryId;
+  return shortItemId(item?.id);
 }
 
 function getInitials(nameOrEmail) {
@@ -286,6 +294,15 @@ function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, cat
             </option>
           ))}
         </select>
+      </label>
+      <label>
+        Inventory ID
+        <input
+          name="inventoryId"
+          value={form.inventoryId}
+          onChange={handleChange}
+          placeholder="e.g. INV-0001"
+        />
       </label>
       <label>
         Title *
@@ -964,7 +981,8 @@ function App() {
     try {
       void loadXlsxLib().then((XLSX) => {
       const rows = inventory.map((item) => ({
-        'Item ID': item.id,
+        'Database ID': item.id,
+        'Item ID': item.inventoryId || '',
         Title: item.title || '',
         Artist: item.artist || '',
         Year: item.year || '',
@@ -1019,6 +1037,7 @@ function App() {
   const handleExportInventoryCsv = () => {
     try {
       const header = [
+        'Database ID',
         'Item ID',
         'Title',
         'Artist',
@@ -1037,6 +1056,7 @@ function App() {
 
       const rows = inventory.map((item) => [
         item.id,
+        item.inventoryId || '',
         item.title || '',
         item.artist || '',
         item.year || '',
@@ -1077,7 +1097,8 @@ function App() {
 
   const inventoryTemplateRows = [
     {
-      'Item ID': '',
+      'Database ID': '',
+      'Item ID': 'INV-0001',
       Title: 'Sample Title',
       Artist: 'Sample Artist',
       Year: '2026',
@@ -1193,7 +1214,7 @@ function App() {
       let skippedCount = 0;
 
       for (const row of rows) {
-        const itemId = normalizeImportCell(row, ['Item ID', 'id', '_id']);
+        const itemId = normalizeImportCell(row, ['Database ID', 'databaseId', 'database id', 'id', '_id']);
         const title = normalizeImportCell(row, ['Title', 'title']);
         const artist = normalizeImportCell(row, ['Artist', 'artist']);
 
@@ -1203,6 +1224,7 @@ function App() {
         }
 
         const payload = {
+          inventoryId: normalizeImportCell(row, ['Item ID', 'Inventory ID', 'inventoryId', 'inventory id']),
           title,
           artist,
           year: normalizeImportCell(row, ['Year', 'year']),
@@ -1432,6 +1454,7 @@ function App() {
 
     const filtered = inventory.filter((item) => {
       const matchesSearch =
+        item.inventoryId.toLowerCase().includes(searchTerm) ||
         item.title.toLowerCase().includes(searchTerm) ||
         item.artist.toLowerCase().includes(searchTerm) ||
         item.category.toLowerCase().includes(searchTerm) ||
@@ -1988,7 +2011,7 @@ function App() {
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;');
-    const safeId = String(selectedItem.id || '')
+    const safeId = String(getDisplayItemId(selectedItem) || '')
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;');
@@ -2083,7 +2106,7 @@ function App() {
         <div className="details-grid">
           <p>
             <strong>Item ID:</strong>{' '}
-            <span title={selectedItem.id}>{shortItemId(selectedItem.id)}</span>
+            <span title={selectedItem.inventoryId || selectedItem.id}>{getDisplayItemId(selectedItem)}</span>
           </p>
           <p>
             <strong>Year:</strong> {selectedItem.year || 'Not set'}
@@ -2120,7 +2143,7 @@ function App() {
           <h3>QR Code</h3>
           <p className="muted qr-item-id">
             <strong>Item ID:</strong>{' '}
-            <span title={selectedItem.id}>{shortItemId(selectedItem.id)}</span>
+            <span title={selectedItem.inventoryId || selectedItem.id}>{getDisplayItemId(selectedItem)}</span>
           </p>
           {detailsQr ? (
             <img src={detailsQr} alt={`QR code for ${selectedItem.title}`} className="qr-image" />
@@ -2889,7 +2912,7 @@ function App() {
         </div>
         <div className="toolbar">
           <input
-            placeholder="Search by title, artist, category, medium, place"
+            placeholder="Search by item ID, title, artist, category, medium, place"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -3842,7 +3865,7 @@ function App() {
                     <div className="inventory-excel-card">
                       <h3>Import Inventory</h3>
                       <p className="muted">
-                        Upload an Excel or CSV file with columns like Item ID, Title, Artist, Category, Place, and Price.
+                        Upload an Excel or CSV file with columns like Database ID, Item ID, Title, Artist, Category, Place, and Price.
                       </p>
                       <div className="actions">
                         <button type="button" className="ghost" onClick={handleDownloadInventoryTemplateExcel}>

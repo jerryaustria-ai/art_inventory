@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 const artworkSchema = new mongoose.Schema(
   {
+    inventoryId: { type: String, default: '', trim: true },
     title: { type: String, required: true, trim: true },
     artist: { type: String, required: true, trim: true },
     year: { type: String, default: '' },
