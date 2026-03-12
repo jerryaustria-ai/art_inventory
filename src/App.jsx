@@ -1,11 +1,40 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import QRCode from 'qrcode';
-import jsQR from 'jsqr';
-import { Html5Qrcode } from 'html5-qrcode';
-import * as XLSX from 'xlsx';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 const AUTH_STORAGE_KEY = 'art_inventory_auth_v1';
+
+let qrcodeLibPromise;
+let jsqrLibPromise;
+let html5QrcodeLibPromise;
+let xlsxLibPromise;
+
+function loadQrcodeLib() {
+  if (!qrcodeLibPromise) {
+    qrcodeLibPromise = import('qrcode').then((module) => module.default);
+  }
+  return qrcodeLibPromise;
+}
+
+function loadJsQrLib() {
+  if (!jsqrLibPromise) {
+    jsqrLibPromise = import('jsqr').then((module) => module.default);
+  }
+  return jsqrLibPromise;
+}
+
+function loadHtml5QrcodeLib() {
+  if (!html5QrcodeLibPromise) {
+    html5QrcodeLibPromise = import('html5-qrcode').then((module) => module.Html5Qrcode);
+  }
+  return html5QrcodeLibPromise;
+}
+
+function loadXlsxLib() {
+  if (!xlsxLibPromise) {
+    xlsxLibPromise = import('xlsx');
+  }
+  return xlsxLibPromise;
+}
 
 const blankForm = {
   title: '',
@@ -597,8 +626,8 @@ function App() {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [displayMode, setDisplayMode] = useState('details');
   const [sortBy, setSortBy] = useState('title');
-  const [itemsPerPage, setItemsPerPage] = useState(20);
-  const [currentPageNumber, setCurrentPageNumber] = useState(1);
+  const [visibleInventoryCount, setVisibleInventoryCount] = useState(20);
+  const [isLoadingMoreInventory, setIsLoadingMoreInventory] = useState(false);
   const [userItemsPerPage, setUserItemsPerPage] = useState(20);
   const [userPageNumber, setUserPageNumber] = useState(1);
   const [auditItemsPerPage, setAuditItemsPerPage] = useState(20);
@@ -618,6 +647,9 @@ function App() {
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState('');
+  const hasLoadedCategoriesRef = useRef(false);
+  const inventoryLoadMoreTimeoutRef = useRef(null);
+  const inventoryLoadMoreRef = useRef(null);
   const [isQrPhotoScanning, setIsQrPhotoScanning] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [qrManualValue, setQrManualValue] = useState('');
@@ -706,16 +738,27 @@ function App() {
       return;
     }
 
-    const qrPayload = `${window.location.origin}${window.location.pathname}?item=${encodeURIComponent(
-      selectedItem.id
-    )}`;
+    let isActive = true;
 
-    QRCode.toDataURL(qrPayload, {
-      width: 220,
-      margin: 1,
-    })
-      .then((dataUrl) => setDetailsQr(dataUrl))
-      .catch(() => setDetailsQr(''));
+    const qrPayload = `${window.location.origin}${window.location.pathname}?item=${encodeURIComponent(selectedItem.id)}`;
+
+    loadQrcodeLib()
+      .then((QRCode) =>
+        QRCode.toDataURL(qrPayload, {
+          width: 220,
+          margin: 1,
+        })
+      )
+      .then((dataUrl) => {
+        if (isActive) setDetailsQr(dataUrl);
+      })
+      .catch(() => {
+        if (isActive) setDetailsQr('');
+      });
+
+    return () => {
+      isActive = false;
+    };
   }, [selectedItem]);
 
   useEffect(() => {
@@ -732,6 +775,14 @@ function App() {
 
     media.addListener(handleChange);
     return () => media.removeListener(handleChange);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (inventoryLoadMoreTimeoutRef.current) {
+        window.clearTimeout(inventoryLoadMoreTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -825,7 +876,11 @@ function App() {
     }
   };
 
-  const fetchCategories = async () => {
+  const fetchCategories = async (force = false) => {
+    if (!force && (hasLoadedCategoriesRef.current || isCategoriesLoading)) {
+      return;
+    }
+
     setIsCategoriesLoading(true);
     try {
       const response = await fetch(`${API_BASE}/categories`);
@@ -840,8 +895,10 @@ function App() {
           }))
         : [];
       setCategories(normalized);
+      hasLoadedCategoriesRef.current = true;
       setApiError('');
     } catch {
+      hasLoadedCategoriesRef.current = false;
       setApiError('Failed to load categories.');
     } finally {
       setIsCategoriesLoading(false);
@@ -906,6 +963,7 @@ function App() {
 
   const handleExportInventoryExcel = () => {
     try {
+      void loadXlsxLib().then((XLSX) => {
       const rows = inventory.map((item) => ({
         'Item ID': item.id,
         Title: item.title || '',
@@ -947,8 +1005,12 @@ function App() {
         URL.revokeObjectURL(url);
       }, 1500);
 
-      setInventoryImportError('');
-      setInventoryImportMessage(`Inventory Excel exported successfully.`);
+        setInventoryImportError('');
+        setInventoryImportMessage(`Inventory Excel exported successfully.`);
+      }).catch((error) => {
+        setInventoryImportMessage('');
+        setInventoryImportError(error?.message || 'Failed to export inventory file.');
+      });
     } catch (error) {
       setInventoryImportMessage('');
       setInventoryImportError(error?.message || 'Failed to export inventory file.');
@@ -1035,27 +1097,32 @@ function App() {
 
   const handleDownloadInventoryTemplateExcel = () => {
     try {
-      const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet(inventoryTemplateRows);
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventory Template');
-      const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      void loadXlsxLib().then((XLSX) => {
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(inventoryTemplateRows);
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventory Template');
+        const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'inventory-template.xlsx';
+        anchor.rel = 'noopener';
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        window.setTimeout(() => {
+          document.body.removeChild(anchor);
+          URL.revokeObjectURL(url);
+        }, 1500);
+        setInventoryImportError('');
+        setInventoryImportMessage('Inventory Excel template downloaded.');
+      }).catch((error) => {
+        setInventoryImportMessage('');
+        setInventoryImportError(error?.message || 'Failed to download inventory template.');
       });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = 'inventory-template.xlsx';
-      anchor.rel = 'noopener';
-      anchor.style.display = 'none';
-      document.body.appendChild(anchor);
-      anchor.click();
-      window.setTimeout(() => {
-        document.body.removeChild(anchor);
-        URL.revokeObjectURL(url);
-      }, 1500);
-      setInventoryImportError('');
-      setInventoryImportMessage('Inventory Excel template downloaded.');
     } catch (error) {
       setInventoryImportMessage('');
       setInventoryImportError(error?.message || 'Failed to download inventory template.');
@@ -1106,6 +1173,7 @@ function App() {
     setInventoryImportError('');
 
     try {
+      const XLSX = await loadXlsxLib();
       const fileName = String(file.name || '').toLowerCase();
       const isCsv = fileName.endsWith('.csv');
       const workbook = isCsv
@@ -1218,7 +1286,7 @@ function App() {
         throw new Error(payload.message || 'Failed to save category.');
       }
 
-      await fetchCategories();
+      await fetchCategories(true);
       const refreshedInventory = await fetchInventory(session);
       setInventory(refreshedInventory);
       if (editingCategoryId && categoryFilter === previousCategoryName) {
@@ -1275,7 +1343,7 @@ function App() {
         throw new Error(payload.message || 'Failed to delete category.');
       }
 
-      await fetchCategories();
+      await fetchCategories(true);
       const refreshedInventory = await fetchInventory(session);
       setInventory(refreshedInventory);
       if (categoryFilter === category.name) {
@@ -1392,18 +1460,40 @@ function App() {
     [inventory]
   );
 
-  const totalPages = Math.max(1, Math.ceil(filteredInventory.length / itemsPerPage));
-  const paginatedInventory = useMemo(() => {
-    const startIndex = (currentPageNumber - 1) * itemsPerPage;
-    return filteredInventory.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredInventory, currentPageNumber, itemsPerPage]);
+  const visibleInventory = useMemo(
+    () => filteredInventory.slice(0, visibleInventoryCount),
+    [filteredInventory, visibleInventoryCount]
+  );
+  const hasMoreInventory = visibleInventoryCount < filteredInventory.length;
 
-  const visiblePageNumbers = useMemo(() => {
-    const start = Math.max(1, currentPageNumber - 2);
-    const end = Math.min(totalPages, start + 4);
-    const adjustedStart = Math.max(1, end - 4);
-    return Array.from({ length: end - adjustedStart + 1 }, (_, index) => adjustedStart + index);
-  }, [currentPageNumber, totalPages]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (!hasMoreInventory || isLoadingMoreInventory) return undefined;
+
+    const sentinel = inventoryLoadMoreRef.current;
+    if (!sentinel) return undefined;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting || isLoadingMoreInventory) return;
+        setIsLoadingMoreInventory(true);
+        inventoryLoadMoreTimeoutRef.current = window.setTimeout(() => {
+          setVisibleInventoryCount((previous) => Math.min(previous + 20, filteredInventory.length));
+          setIsLoadingMoreInventory(false);
+          inventoryLoadMoreTimeoutRef.current = null;
+        }, 250);
+      },
+      {
+        rootMargin: '240px 0px',
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [filteredInventory.length, hasMoreInventory, isLoadingMoreInventory]);
 
   const userTotalPages = Math.max(1, Math.ceil(users.length / userItemsPerPage));
   const paginatedUsers = useMemo(() => {
@@ -1711,14 +1801,13 @@ function App() {
     .join(' • ');
 
   useEffect(() => {
-    setCurrentPageNumber(1);
-  }, [search, statusFilter, placeFilter, categoryFilter, sortBy, itemsPerPage]);
-
-  useEffect(() => {
-    if (currentPageNumber > totalPages) {
-      setCurrentPageNumber(totalPages);
+    setVisibleInventoryCount(20);
+    setIsLoadingMoreInventory(false);
+    if (inventoryLoadMoreTimeoutRef.current) {
+      window.clearTimeout(inventoryLoadMoreTimeoutRef.current);
+      inventoryLoadMoreTimeoutRef.current = null;
     }
-  }, [currentPageNumber, totalPages]);
+  }, [search, statusFilter, placeFilter, categoryFilter, sortBy]);
 
   useEffect(() => {
     setUserPageNumber(1);
@@ -2233,6 +2322,7 @@ function App() {
     setIsQrPhotoScanning(true);
     setQrScanError('');
     try {
+      const jsQR = await loadJsQrLib();
       const loadImageElement = () =>
         new Promise((resolve, reject) => {
           const objectUrl = URL.createObjectURL(file);
@@ -2333,6 +2423,7 @@ function App() {
         setQrScanError('');
         hasHandledScanRef.current = false;
 
+        const Html5Qrcode = await loadHtml5QrcodeLib();
         const scanner = new Html5Qrcode('qr-reader');
         html5QrRef.current = scanner;
 
@@ -2530,7 +2621,6 @@ function App() {
                   setCurrentPage('admin');
                   setAdminSection('users');
                   fetchUsers();
-                  fetchCategories();
                   fetchAuditLogs(auditActionFilter);
                 }}
               >
@@ -2638,7 +2728,6 @@ function App() {
                           setAdminSection('users');
                           setIsMobileMenuOpen(false);
                           fetchUsers();
-                          fetchCategories();
                         }}
                       >
                         <span>Users</span>
@@ -2653,7 +2742,6 @@ function App() {
                           setCurrentPage('admin');
                           setAdminSection('audit');
                           setIsMobileMenuOpen(false);
-                          fetchCategories();
                           fetchAuditLogs(auditActionFilter);
                         }}
                       >
@@ -2909,7 +2997,7 @@ function App() {
         </div>
         <div className="card-grid">
           {filteredInventory.length === 0 ? <p>No paintings match your filters.</p> : null}
-          {paginatedInventory.map((item) => (
+          {visibleInventory.map((item) => (
             <article
               className={`card ${displayMode === 'image' ? 'picture-only' : ''} ${item.isActive ? '' : 'inactive-card'}`}
               key={item.id}
@@ -3019,60 +3107,20 @@ function App() {
               )}
             </article>
           ))}
+          {isLoadingMoreInventory
+            ? Array.from({ length: Math.min(4, filteredInventory.length - visibleInventory.length || 4) }, (_, index) => (
+                <article className="card card-loading" key={`loading-${index}`} aria-hidden="true">
+                  <div className="card-loading-media shimmer-block" />
+                  <div className="card-loading-body">
+                    <div className="shimmer-line shimmer-line-title" />
+                    <div className="shimmer-line" />
+                    <div className="shimmer-line shimmer-line-short" />
+                  </div>
+                </article>
+              ))
+            : null}
         </div>
-        {filteredInventory.length > 0 ? (
-          <div className="pagination-bar">
-            {filteredInventory.length > itemsPerPage ? (
-              <div className="pagination-controls">
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => setCurrentPageNumber((previous) => Math.max(1, previous - 1))}
-                  disabled={currentPageNumber === 1}
-                >
-                  Prev
-                </button>
-                <div className="pagination-pages">
-                  {visiblePageNumbers.map((pageNumber) => (
-                    <button
-                      type="button"
-                      key={pageNumber}
-                      className={pageNumber === currentPageNumber ? '' : 'ghost'}
-                      onClick={() => setCurrentPageNumber(pageNumber)}
-                    >
-                      {pageNumber}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => setCurrentPageNumber((previous) => Math.min(totalPages, previous + 1))}
-                  disabled={currentPageNumber === totalPages}
-                >
-                  Next
-                </button>
-              </div>
-            ) : (
-              <div />
-            )}
-            <label className="pagination-size">
-              Items per page
-              <select value={itemsPerPage} onChange={(event) => setItemsPerPage(Number(event.target.value))}>
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={30}>30</option>
-                <option value={40}>40</option>
-                <option value={50}>50</option>
-                <option value={60}>60</option>
-                <option value={70}>70</option>
-                <option value={80}>80</option>
-                <option value={90}>90</option>
-                <option value={100}>100</option>
-              </select>
-            </label>
-          </div>
-        ) : null}
+        {hasMoreInventory ? <div ref={inventoryLoadMoreRef} className="inventory-load-more-trigger" aria-hidden="true" /> : null}
       </section>
 
       {isFormOpen && !isMobileFormPage ? (
@@ -3897,7 +3945,6 @@ function App() {
                 setCurrentPage('admin');
                 setAdminSection('users');
                 fetchUsers();
-                fetchCategories();
                 fetchAuditLogs(auditActionFilter);
               }}
             >

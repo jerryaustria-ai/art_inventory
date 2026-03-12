@@ -764,6 +764,63 @@ button.danger {
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
 }
 
+.inventory-load-more-trigger {
+  width: 100%;
+  height: 1px;
+}
+
+.card-loading {
+  overflow: hidden;
+}
+
+.card-loading-media {
+  min-height: 210px;
+  background: linear-gradient(135deg, #edf2f3 0%, #dfe8ea 100%);
+}
+
+.card-loading-body {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem;
+}
+
+.shimmer-block,
+.shimmer-line {
+  position: relative;
+  overflow: hidden;
+  background: #e8eeef;
+}
+
+.shimmer-block::after,
+.shimmer-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.7) 50%, transparent 100%);
+  animation: shimmer-slide 1.2s infinite;
+}
+
+.shimmer-line {
+  height: 14px;
+  border-radius: 999px;
+}
+
+.shimmer-line-title {
+  height: 22px;
+  width: 68%;
+}
+
+.shimmer-line-short {
+  width: 45%;
+}
+
+@keyframes shimmer-slide {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 .pagination-bar {
   display: flex;
   align-items: center;
