@@ -1322,8 +1322,7 @@ button.danger {
   color: #0f766e;
   padding: 0;
   border-radius: 0;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration: none;
 }
 
 .card-action-link-danger {

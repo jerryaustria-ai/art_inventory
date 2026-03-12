@@ -3182,14 +3182,14 @@ function App() {
                             <>
                               <button
                                 type="button"
-                                className={isMobileViewport ? 'card-action-link' : ''}
+                                className="card-action-link"
                                 onClick={() => handleEdit(item.id)}
                               >
                                 Edit
                               </button>
                               <button
                                 type="button"
-                                className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
+                                className="card-action-link card-action-link-danger"
                                 onClick={() => handleDelete(item.id)}
                               >
                                 Delete
@@ -3200,14 +3200,14 @@ function App() {
                             <>
                               <button
                                 type="button"
-                                className={isMobileViewport ? 'card-action-link' : ''}
+                                className="card-action-link"
                                 onClick={() => handleActivate(item.id)}
                               >
                                 Activate
                               </button>
                               <button
                                 type="button"
-                                className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
+                                className="card-action-link card-action-link-danger"
                                 onClick={() => handlePermanentDelete(item.id)}
                               >
                                 Delete Permanently
@@ -3227,14 +3227,14 @@ function App() {
                       <>
                         <button
                           type="button"
-                          className={isMobileViewport ? 'card-action-link' : ''}
+                          className="card-action-link"
                           onClick={() => handleEdit(item.id)}
                         >
                           Edit
                         </button>
                         <button
                           type="button"
-                          className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
+                          className="card-action-link card-action-link-danger"
                           onClick={() => handleDelete(item.id)}
                         >
                           Delete
@@ -3245,14 +3245,14 @@ function App() {
                       <>
                         <button
                           type="button"
-                          className={isMobileViewport ? 'card-action-link' : ''}
+                          className="card-action-link"
                           onClick={() => handleActivate(item.id)}
                         >
                           Activate
                         </button>
                         <button
                           type="button"
-                          className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
+                          className="card-action-link card-action-link-danger"
                           onClick={() => handlePermanentDelete(item.id)}
                         >
                           Delete Permanently
