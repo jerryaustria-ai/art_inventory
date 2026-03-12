@@ -150,7 +150,7 @@ function escapeCsv(value) {
 function shortItemId(value) {
   const raw = String(value || '').trim();
   if (!raw) return 'N/A';
-  return raw.slice(-4);
+  return raw.slice(-5).toUpperCase();
 }
 
 function getDisplayItemId(item) {

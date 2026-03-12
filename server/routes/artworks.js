@@ -4,8 +4,43 @@ import { readActorFromRequest, writeAuditLog } from '../utils/audit.js';
 
 const router = express.Router();
 
-function buildInventoryId(value) {
-  return String(value || '').trim().slice(-4);
+const INVENTORY_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function generateInventoryId() {
+  return Array.from({ length: 5 }, () => {
+    const index = Math.floor(Math.random() * INVENTORY_ID_ALPHABET.length);
+    return INVENTORY_ID_ALPHABET[index];
+  }).join('');
+}
+
+function isValidInventoryId(value) {
+  return /^[A-Z0-9]{5}$/.test(String(value || '').trim());
+}
+
+async function createUniqueInventoryId() {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = generateInventoryId();
+    const existing = await Artwork.exists({ inventoryId: candidate });
+    if (!existing) return candidate;
+  }
+
+  throw new Error('Failed to generate unique inventory ID');
+}
+
+async function ensureInventoryId(artwork) {
+  if (!artwork) return artwork;
+  const currentValue = String(artwork.inventoryId || '').trim().toUpperCase();
+  if (isValidInventoryId(currentValue)) {
+    if (artwork.inventoryId !== currentValue) {
+      artwork.inventoryId = currentValue;
+      await artwork.save();
+    }
+    return artwork;
+  }
+
+  artwork.inventoryId = await createUniqueInventoryId();
+  await artwork.save();
+  return artwork;
 }
 
 function sanitizeArtworkPayload(body = {}) {
@@ -21,6 +56,7 @@ router.get('/', async (req, res) => {
     const query =
       actorRole === 'super admin' && includeInactive ? {} : { isActive: { $ne: false } };
     const artworks = await Artwork.find(query).sort({ createdAt: -1 });
+    await Promise.all(artworks.map((artwork) => ensureInventoryId(artwork)));
     res.json(artworks);
   } catch {
     res.status(500).json({ message: 'Failed to fetch artworks' });
@@ -37,6 +73,7 @@ router.get('/:id', async (req, res) => {
     if (item.isActive === false && actorRole !== 'super admin') {
       return res.status(404).json({ message: 'Artwork not found' });
     }
+    await ensureInventoryId(item);
     return res.json(item);
   } catch {
     return res.status(400).json({ message: 'Failed to fetch artwork' });
@@ -46,11 +83,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const artwork = await Artwork.create(sanitizeArtworkPayload(req.body));
-    const nextInventoryId = buildInventoryId(artwork._id);
-    if (artwork.inventoryId !== nextInventoryId) {
-      artwork.inventoryId = nextInventoryId;
-      await artwork.save();
-    }
+    await ensureInventoryId(artwork);
     res.status(201).json(artwork);
   } catch {
     res.status(400).json({ message: 'Failed to create artwork' });
@@ -61,18 +94,16 @@ router.put('/:id', async (req, res) => {
   try {
     const updated = await Artwork.findByIdAndUpdate(
       req.params.id,
+      sanitizeArtworkPayload(req.body),
       {
-        ...sanitizeArtworkPayload(req.body),
-        inventoryId: buildInventoryId(req.params.id),
-      },
-      {
-      new: true,
-      runValidators: true,
+        new: true,
+        runValidators: true,
       }
     );
     if (!updated) {
       return res.status(404).json({ message: 'Artwork not found' });
     }
+    await ensureInventoryId(updated);
     res.json(updated);
   } catch {
     res.status(400).json({ message: 'Failed to update artwork' });
