@@ -2447,8 +2447,10 @@ function App() {
 
         try {
           await scanner.start({ facingMode: { exact: 'environment' } }, config, onScanSuccess, onScanFailure);
+          setQrScanError('');
         } catch {
           await scanner.start({ facingMode: 'environment' }, config, onScanSuccess, onScanFailure);
+          setQrScanError('');
         }
       } catch {
         setQrScanError('Unable to start camera scanner. Allow camera permission or use photo scan below.');
