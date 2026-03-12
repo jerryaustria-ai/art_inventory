@@ -1478,7 +1478,6 @@ function App() {
     () => inventory.reduce((sum, item) => sum + Number(item.price || 0), 0),
     [inventory]
   );
-
   const inventoryBatchSize = isMobileViewport ? 24 : 20;
 
   const visibleInventory = useMemo(
