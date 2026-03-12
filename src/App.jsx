@@ -716,6 +716,8 @@ function App() {
     ? 'Importing inventory...'
     : isInventoryMutating
       ? 'Updating inventory...'
+    : isLoading
+      ? 'Loading inventory and categories...'
     : isAuditLoading
       ? 'Loading audit trail...'
       : isUsersLoading
