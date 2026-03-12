@@ -753,6 +753,10 @@ button.danger {
   height: 20px;
 }
 
+.mobile-sort-direction-btn {
+  margin-top: 0.35rem;
+}
+
 .icon-clear-btn {
   width: 42px;
   height: 42px;

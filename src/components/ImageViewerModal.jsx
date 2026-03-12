@@ -11,6 +11,7 @@ export default function ImageViewerModal({
   handleImagePointerUp,
 }) {
   if (!viewerItem?.imageUrl) return null;
+  const viewerTitle = String(viewerItem.title || '').trim() || 'NO NAME';
 
   return (
     <div className="modal-backdrop">
@@ -58,7 +59,7 @@ export default function ImageViewerModal({
         >
           <img
             src={viewerItem.imageUrl}
-            alt={viewerItem.title}
+            alt={viewerTitle}
             style={{ transform: `translate(${imagePan.x}px, ${imagePan.y}px) scale(${imageZoom})` }}
             className="image-viewer-image"
           />

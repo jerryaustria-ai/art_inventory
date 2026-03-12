@@ -74,6 +74,14 @@ function formatSculptureCount(count) {
   return `${count} sculpture${count === 1 ? '' : 's'}`;
 }
 
+function getArtworkTitle(value) {
+  return String(value || '').trim() || 'NO NAME';
+}
+
+function getArtworkArtist(value) {
+  return String(value || '').trim() || 'Artist not set';
+}
+
 function normalizeArtwork(item) {
   return {
     ...item,
@@ -644,6 +652,7 @@ function App() {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [displayMode, setDisplayMode] = useState('image');
   const [sortBy, setSortBy] = useState('title');
+  const [sortDirection, setSortDirection] = useState('asc');
   const [visibleInventoryCount, setVisibleInventoryCount] = useState(20);
   const [isLoadingMoreInventory, setIsLoadingMoreInventory] = useState(false);
   const [userItemsPerPage, setUserItemsPerPage] = useState(20);
@@ -1476,11 +1485,16 @@ function App() {
     });
 
     return filtered.sort((a, b) => {
-      if (sortBy === 'price') return Number(b.price || 0) - Number(a.price || 0);
-      if (sortBy === 'year') return Number(b.year || 0) - Number(a.year || 0);
-      return a.title.localeCompare(b.title);
+      const direction = sortDirection === 'desc' ? -1 : 1;
+      if (sortBy === 'price') {
+        return (Number(a.price || 0) - Number(b.price || 0)) * direction;
+      }
+      if (sortBy === 'year') {
+        return (Number(a.year || 0) - Number(b.year || 0)) * direction;
+      }
+      return getArtworkTitle(a.title).localeCompare(getArtworkTitle(b.title)) * direction;
     });
-  }, [inventory, search, statusFilter, placeFilter, categoryFilter, sortBy]);
+  }, [inventory, search, statusFilter, placeFilter, categoryFilter, sortBy, sortDirection]);
 
   const totalValue = useMemo(
     () => inventory.reduce((sum, item) => sum + Number(item.price || 0), 0),
@@ -1815,7 +1829,8 @@ function App() {
     statusFilter !== 'All' ||
     placeFilter !== 'All' ||
     categoryFilter !== 'All' ||
-    sortBy !== 'title';
+    sortBy !== 'title' ||
+    sortDirection !== 'asc';
 
   const clearAllFilters = () => {
     setSearch('');
@@ -1823,6 +1838,7 @@ function App() {
     setPlaceFilter('All');
     setCategoryFilter('All');
     setSortBy('title');
+    setSortDirection('asc');
   };
 
   const activeFilterCount =
@@ -1830,7 +1846,8 @@ function App() {
     Number(statusFilter !== 'All') +
     Number(placeFilter !== 'All') +
     Number(categoryFilter !== 'All') +
-    Number(sortBy !== 'title');
+    Number(sortBy !== 'title') +
+    Number(sortDirection !== 'asc');
 
   const activeFilterSummary = [
     search.trim() ? `Search: ${search.trim()}` : '',
@@ -1838,6 +1855,7 @@ function App() {
     placeFilter !== 'All' ? `Location: ${placeFilter}` : '',
     categoryFilter !== 'All' ? `Category: ${categoryFilter}` : '',
     sortBy !== 'title' ? `Sort: ${sortBy}` : '',
+    sortDirection !== 'asc' ? `Direction: ${sortDirection}` : '',
   ]
     .filter(Boolean)
     .join(' • ');
@@ -1849,7 +1867,7 @@ function App() {
       window.clearTimeout(inventoryLoadMoreTimeoutRef.current);
       inventoryLoadMoreTimeoutRef.current = null;
     }
-  }, [categoryFilter, inventoryBatchSize, placeFilter, search, sortBy, statusFilter]);
+  }, [categoryFilter, inventoryBatchSize, placeFilter, search, sortBy, sortDirection, statusFilter]);
 
   useEffect(() => {
     setUserPageNumber(1);
@@ -2033,7 +2051,7 @@ function App() {
       return;
     }
 
-    const safeTitle = String(selectedItem.title || 'Untitled Item')
+    const safeTitle = String(getArtworkTitle(selectedItem.title))
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;');
@@ -2119,11 +2137,11 @@ function App() {
 
   const selectedItemDetailsContent = selectedItem ? (
     <>
-      <h2>{selectedItem.title}</h2>
-      <p className="totals-subtitle">{selectedItem.artist}</p>
+      <h2>{getArtworkTitle(selectedItem.title)}</h2>
+      <p className="totals-subtitle">{getArtworkArtist(selectedItem.artist)}</p>
       {selectedItem.imageUrl ? (
         <button type="button" className="details-image-btn" onClick={() => handleOpenImageViewer(selectedItem.id)}>
-          <img className="details-image" src={selectedItem.imageUrl} alt={selectedItem.title} />
+          <img className="details-image" src={selectedItem.imageUrl} alt={getArtworkTitle(selectedItem.title)} />
         </button>
       ) : (
         <div className="details-image placeholder">No Image</div>
@@ -2172,7 +2190,7 @@ function App() {
             <span title={selectedItem.inventoryId || selectedItem.id}>{getDisplayItemId(selectedItem)}</span>
           </p>
           {detailsQr ? (
-            <img src={detailsQr} alt={`QR code for ${selectedItem.title}`} className="qr-image" />
+            <img src={detailsQr} alt={`QR code for ${getArtworkTitle(selectedItem.title)}`} className="qr-image" />
           ) : (
             <p className="muted">Generating QR code...</p>
           )}
@@ -2978,6 +2996,35 @@ function App() {
             <option value="year">Sort: Year</option>
             <option value="price">Sort: Price</option>
           </select>
+          <button
+            type="button"
+            className="icon-toggle"
+            onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+            aria-label={sortDirection === 'asc' ? 'Sort ascending. Tap to switch to descending' : 'Sort descending. Tap to switch to ascending'}
+            title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              {sortDirection === 'asc' ? (
+                <path
+                  d="M8 17V7m0 0-3 3m3-3 3 3M14 8h5M14 12h4M14 16h3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ) : (
+                <path
+                  d="M8 7v10m0 0-3-3m3 3 3-3M14 8h3M14 12h4M14 16h5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+            </svg>
+          </button>
           {hasActiveFilters ? (
             <div className="toolbar-action-group">
               <button
@@ -3050,7 +3097,7 @@ function App() {
                 onClick={() => setSelectedId(item.id)}
               >
                 {item.imageUrl ? (
-                  <img src={item.imageUrl} alt={item.title} />
+                  <img src={item.imageUrl} alt={getArtworkTitle(item.title)} />
                 ) : (
                   <div className="placeholder">No Image</div>
                 )}
@@ -3060,10 +3107,10 @@ function App() {
                 <div className="card-body">
                   <h3>
                     <button type="button" className="title-btn" onClick={() => setSelectedId(item.id)}>
-                      {item.title}
+                      {getArtworkTitle(item.title)}
                     </button>
                   </h3>
-                  <p className="muted">{item.artist}</p>
+                  <p className="muted">{getArtworkArtist(item.artist)}</p>
                   <p>
                     {item.medium || 'Medium not set'} {item.year ? `(${item.year})` : ''}
                   </p>
@@ -3096,7 +3143,7 @@ function App() {
                       onClick={() => toggleExpandedCard(item.id)}
                       aria-expanded={isExpanded ? 'true' : 'false'}
                     >
-                      <span className="picture-expand-title">{item.title || 'Untitled Item'}</span>
+                      <span className="picture-expand-title">{getArtworkTitle(item.title)}</span>
                       <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path
                           d="m6 9 6 6 6-6"
@@ -3109,9 +3156,9 @@ function App() {
                       </svg>
                     </button>
                     {isExpanded ? (
-                      <>
-                        <div className="card-body picture-card-details">
-                          <p className="muted">{item.artist || 'Artist not set'}</p>
+                        <>
+                          <div className="card-body picture-card-details">
+                          <p className="muted">{getArtworkArtist(item.artist)}</p>
                           <p>
                             {item.medium || 'Medium not set'} {item.year ? `(${item.year})` : ''}
                           </p>
@@ -3182,7 +3229,7 @@ function App() {
                 ) : (
                   <div className="picture-card-footer">
                     <button type="button" className="picture-title-btn" onClick={() => setSelectedId(item.id)}>
-                      {item.title}
+                      {getArtworkTitle(item.title)}
                     </button>
                     <div className="actions card-actions">
                       {canManage ? (
@@ -3363,6 +3410,42 @@ function App() {
                   <option value="year">Sort: Year</option>
                   <option value="price">Sort: Price</option>
                 </select>
+              </label>
+              <label>
+                Direction
+                <button
+                  type="button"
+                  className="icon-toggle mobile-sort-direction-btn"
+                  onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+                  aria-label={
+                    sortDirection === 'asc'
+                      ? 'Sort ascending. Tap to switch to descending'
+                      : 'Sort descending. Tap to switch to ascending'
+                  }
+                  title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    {sortDirection === 'asc' ? (
+                      <path
+                        d="M8 17V7m0 0-3 3m3-3 3 3M14 8h5M14 12h4M14 16h3"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    ) : (
+                      <path
+                        d="M8 7v10m0 0-3-3m3 3 3-3M14 8h3M14 12h4M14 16h5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )}
+                  </svg>
+                </button>
               </label>
             </div>
             <div className="actions">
