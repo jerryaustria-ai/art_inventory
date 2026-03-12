@@ -1,6 +1,7 @@
 import express from 'express';
 import Artwork from '../models/Artwork.js';
 import { readActorFromRequest, writeAuditLog } from '../utils/audit.js';
+import { resolveArtworkImageUrl } from '../utils/cloudinary.js';
 
 const router = express.Router();
 
@@ -43,9 +44,10 @@ async function ensureInventoryId(artwork) {
   return artwork;
 }
 
-function sanitizeArtworkPayload(body = {}) {
+async function sanitizeArtworkPayload(body = {}) {
   const payload = { ...body };
   delete payload.inventoryId;
+  payload.imageUrl = await resolveArtworkImageUrl(payload.imageUrl);
   return payload;
 }
 
@@ -82,11 +84,11 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const artwork = await Artwork.create(sanitizeArtworkPayload(req.body));
+    const artwork = await Artwork.create(await sanitizeArtworkPayload(req.body));
     await ensureInventoryId(artwork);
     res.status(201).json(artwork);
-  } catch {
-    res.status(400).json({ message: 'Failed to create artwork' });
+  } catch (error) {
+    res.status(400).json({ message: error?.message || 'Failed to create artwork' });
   }
 });
 
@@ -94,7 +96,7 @@ router.put('/:id', async (req, res) => {
   try {
     const updated = await Artwork.findByIdAndUpdate(
       req.params.id,
-      sanitizeArtworkPayload(req.body),
+      await sanitizeArtworkPayload(req.body),
       {
         new: true,
         runValidators: true,
@@ -105,8 +107,8 @@ router.put('/:id', async (req, res) => {
     }
     await ensureInventoryId(updated);
     res.json(updated);
-  } catch {
-    res.status(400).json({ message: 'Failed to update artwork' });
+  } catch (error) {
+    res.status(400).json({ message: error?.message || 'Failed to update artwork' });
   }
 });
 

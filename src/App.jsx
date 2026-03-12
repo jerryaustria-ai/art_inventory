@@ -1611,7 +1611,8 @@ function App() {
           body: JSON.stringify(form),
         });
         if (!response.ok) {
-          throw new Error('Failed to update artwork');
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.message || 'Failed to update artwork');
         }
         const updatedItem = normalizeArtwork(await response.json());
         setInventory((previous) => previous.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
@@ -1623,8 +1624,8 @@ function App() {
           setReturnDetailsId('');
         }
         setApiError('');
-      } catch {
-        setInventoryFormError('Failed to update item. Please try again.');
+      } catch (error) {
+        setInventoryFormError(error.message || 'Failed to update item. Please try again.');
       } finally {
         setIsInventoryMutating(false);
       }
@@ -1639,15 +1640,16 @@ function App() {
         body: JSON.stringify(form),
       });
       if (!response.ok) {
-        throw new Error('Failed to create artwork');
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || 'Failed to create artwork');
       }
       const createdItem = normalizeArtwork(await response.json());
       setInventory((previous) => [createdItem, ...previous]);
       setIsFormOpen(false);
       setInventoryFormError('');
       setApiError('');
-    } catch {
-      setInventoryFormError('Failed to add item. Please try again.');
+    } catch (error) {
+      setInventoryFormError(error.message || 'Failed to add item. Please try again.');
     } finally {
       setIsInventoryMutating(false);
     }

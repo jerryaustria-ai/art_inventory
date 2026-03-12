@@ -7,6 +7,10 @@
   - `MONGODB_URI` (Atlas connection string)
   - `CLIENT_URL` (your Vercel URL, e.g. `https://your-app.vercel.app`)
   - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
+  - `CLOUDINARY_CLOUD_NAME`
+  - `CLOUDINARY_API_KEY`
+  - `CLOUDINARY_API_SECRET`
+  - `CLOUDINARY_FOLDER` (optional, defaults to `art-painting-inventory`)
 - Deploy and copy backend URL (example: `https://art-inventory-api.onrender.com`).
 
 ## 2) Frontend (Vercel)
