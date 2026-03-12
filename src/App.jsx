@@ -241,7 +241,14 @@ function getCategoryStatIcon(category) {
   );
 }
 
-function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, categories = [], submitError = '' }) {
+function InventoryForm({
+  onSubmit,
+  editingItem,
+  onCancel,
+  hideTitle = false,
+  categories = [],
+  submitError = '',
+}) {
   const [form, setForm] = useState(editingItem || blankForm);
   const [formError, setFormError] = useState('');
 
@@ -282,7 +289,7 @@ function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, cat
   };
 
   const clearImage = () => {
-    setForm((previous) => ({ ...previous, imageUrl: '' }));
+    setForm((previous) => ({ ...previous, imageUrl: '', imagePublicId: '' }));
   };
 
   return (
