@@ -2517,8 +2517,8 @@ function App() {
       {isOverlayLoading ? (
         <div className="loading-overlay" role="status" aria-live="polite" aria-busy="true">
           <div className="loading-overlay-card">
-            <div className="loading-spinner" aria-hidden="true" />
-            <strong>{loadingOverlayMessage}</strong>
+            <img src="/januarius-loading-logo.png" alt="" className="loading-logo" aria-hidden="true" />
+            <strong>Loading...</strong>
           </div>
         </div>
       ) : null}
