@@ -656,6 +656,7 @@ function App() {
   const [editingId, setEditingId] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [returnDetailsId, setReturnDetailsId] = useState('');
+  const [viewerReturnId, setViewerReturnId] = useState('');
   const [detailsQr, setDetailsQr] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
@@ -1427,6 +1428,7 @@ function App() {
     localStorage.removeItem(AUTH_STORAGE_KEY);
     setEditingId('');
     setSelectedId('');
+    setViewerReturnId('');
     setReturnDetailsId('');
     setIsFormOpen(false);
     setIsTotalsOpen(false);
@@ -1686,6 +1688,7 @@ function App() {
 
   const handleCloseSelectedItem = () => {
     setSelectedId('');
+    setViewerReturnId('');
   };
 
   const handleDelete = async (id) => {
@@ -1967,6 +1970,10 @@ function App() {
   };
 
   const handleOpenImageViewer = (id) => {
+    if (isMobileViewport && selectedId === id) {
+      setViewerReturnId(id);
+      setSelectedId('');
+    }
     setViewerId(id);
     setImageZoom(1);
     setImagePan({ x: 0, y: 0 });
@@ -1979,6 +1986,10 @@ function App() {
     setImageZoom(1);
     setImagePan({ x: 0, y: 0 });
     isPanningRef.current = false;
+    if (viewerReturnId) {
+      setSelectedId(viewerReturnId);
+      setViewerReturnId('');
+    }
   };
 
   const zoomInImage = () => {
