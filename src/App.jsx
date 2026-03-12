@@ -256,8 +256,8 @@ function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, cat
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    if (!form.category.trim() || !form.title.trim() || !form.artist.trim()) {
-      setFormError('Please fill in required fields: Artwork Category, Title, and Artist.');
+    if (!form.category.trim()) {
+      setFormError('Please fill in required field: Artwork Category.');
       return;
     }
     setFormError('');
@@ -300,21 +300,12 @@ function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, cat
         </select>
       </label>
       <label>
-        Inventory ID
-        <input
-          name="inventoryId"
-          value={form.inventoryId}
-          readOnly
-          placeholder="Auto-generated"
-        />
+        Title
+        <input name="title" value={form.title} onChange={handleChange} />
       </label>
       <label>
-        Title *
-        <input name="title" value={form.title} onChange={handleChange} required />
-      </label>
-      <label>
-        Artist *
-        <input name="artist" value={form.artist} onChange={handleChange} required />
+        Artist
+        <input name="artist" value={form.artist} onChange={handleChange} />
       </label>
       <label>
         Year
@@ -353,10 +344,6 @@ function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, cat
       <label>
         Price (PHP)
         <input name="price" value={form.price} onChange={handleChange} type="number" min="0" step="0.01" />
-      </label>
-      <label>
-        Image URL
-        <input name="imageUrl" value={form.imageUrl} onChange={handleChange} placeholder="https://..." />
       </label>
       <label>
         Upload Image
@@ -2508,7 +2495,8 @@ function App() {
       <header>
         <div className="mobile-header-top">
           <div className="mobile-header-actions">
-            <div className="mobile-menu-container">
+            <div className="mobile-header-brand">
+              <div className="mobile-menu-container">
               <button
                 type="button"
                 className="hamburger-btn"
@@ -2528,6 +2516,8 @@ function App() {
                   />
                 </svg>
               </button>
+              </div>
+              <span className="mobile-header-title">Artworkz</span>
             </div>
             <button
               type="button"
