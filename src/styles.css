@@ -1417,6 +1417,7 @@ button.danger {
     max-width: none;
     white-space: normal;
     overflow-wrap: anywhere;
+    display: none;
   }
 
   header p {
