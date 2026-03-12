@@ -1460,6 +1460,8 @@ function App() {
     [inventory]
   );
 
+  const inventoryBatchSize = isMobileViewport ? 24 : 20;
+
   const visibleInventory = useMemo(
     () => filteredInventory.slice(0, visibleInventoryCount),
     [filteredInventory, visibleInventoryCount]
@@ -1478,13 +1480,13 @@ function App() {
         if (!entry?.isIntersecting || isLoadingMoreInventory) return;
         setIsLoadingMoreInventory(true);
         inventoryLoadMoreTimeoutRef.current = window.setTimeout(() => {
-          setVisibleInventoryCount((previous) => Math.min(previous + 20, filteredInventory.length));
+          setVisibleInventoryCount((previous) => Math.min(previous + inventoryBatchSize, filteredInventory.length));
           setIsLoadingMoreInventory(false);
           inventoryLoadMoreTimeoutRef.current = null;
-        }, 250);
+        }, isMobileViewport ? 120 : 200);
       },
       {
-        rootMargin: '240px 0px',
+        rootMargin: isMobileViewport ? '520px 0px' : '280px 0px',
       }
     );
 
@@ -1493,7 +1495,7 @@ function App() {
     return () => {
       observer.disconnect();
     };
-  }, [filteredInventory.length, hasMoreInventory, isLoadingMoreInventory]);
+  }, [filteredInventory.length, hasMoreInventory, inventoryBatchSize, isLoadingMoreInventory, isMobileViewport]);
 
   const userTotalPages = Math.max(1, Math.ceil(users.length / userItemsPerPage));
   const paginatedUsers = useMemo(() => {
@@ -1801,13 +1803,13 @@ function App() {
     .join(' • ');
 
   useEffect(() => {
-    setVisibleInventoryCount(20);
+    setVisibleInventoryCount(inventoryBatchSize);
     setIsLoadingMoreInventory(false);
     if (inventoryLoadMoreTimeoutRef.current) {
       window.clearTimeout(inventoryLoadMoreTimeoutRef.current);
       inventoryLoadMoreTimeoutRef.current = null;
     }
-  }, [search, statusFilter, placeFilter, categoryFilter, sortBy]);
+  }, [categoryFilter, inventoryBatchSize, placeFilter, search, sortBy, statusFilter]);
 
   useEffect(() => {
     setUserPageNumber(1);
