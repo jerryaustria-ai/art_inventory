@@ -4,6 +4,16 @@ import { readActorFromRequest, writeAuditLog } from '../utils/audit.js';
 
 const router = express.Router();
 
+function buildInventoryId(value) {
+  return String(value || '').trim().slice(-4);
+}
+
+function sanitizeArtworkPayload(body = {}) {
+  const payload = { ...body };
+  delete payload.inventoryId;
+  return payload;
+}
+
 router.get('/', async (req, res) => {
   try {
     const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
@@ -35,7 +45,12 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const artwork = await Artwork.create(req.body);
+    const artwork = await Artwork.create(sanitizeArtworkPayload(req.body));
+    const nextInventoryId = buildInventoryId(artwork._id);
+    if (artwork.inventoryId !== nextInventoryId) {
+      artwork.inventoryId = nextInventoryId;
+      await artwork.save();
+    }
     res.status(201).json(artwork);
   } catch {
     res.status(400).json({ message: 'Failed to create artwork' });
@@ -44,10 +59,17 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const updated = await Artwork.findByIdAndUpdate(req.params.id, req.body, {
+    const updated = await Artwork.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...sanitizeArtworkPayload(req.body),
+        inventoryId: buildInventoryId(req.params.id),
+      },
+      {
       new: true,
       runValidators: true,
-    });
+      }
+    );
     if (!updated) {
       return res.status(404).json({ message: 'Artwork not found' });
     }

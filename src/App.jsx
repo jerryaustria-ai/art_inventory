@@ -150,7 +150,7 @@ function escapeCsv(value) {
 function shortItemId(value) {
   const raw = String(value || '').trim();
   if (!raw) return 'N/A';
-  return raw.slice(0, 5);
+  return raw.slice(-4);
 }
 
 function getDisplayItemId(item) {
@@ -300,8 +300,8 @@ function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, cat
         <input
           name="inventoryId"
           value={form.inventoryId}
-          onChange={handleChange}
-          placeholder="e.g. INV-0001"
+          readOnly
+          placeholder="Auto-generated"
         />
       </label>
       <label>
@@ -982,7 +982,7 @@ function App() {
       void loadXlsxLib().then((XLSX) => {
       const rows = inventory.map((item) => ({
         'Database ID': item.id,
-        'Item ID': item.inventoryId || '',
+        'Inventory ID': item.inventoryId || shortItemId(item.id),
         Title: item.title || '',
         Artist: item.artist || '',
         Year: item.year || '',
@@ -1038,7 +1038,7 @@ function App() {
     try {
       const header = [
         'Database ID',
-        'Item ID',
+        'Inventory ID',
         'Title',
         'Artist',
         'Year',
@@ -1056,7 +1056,7 @@ function App() {
 
       const rows = inventory.map((item) => [
         item.id,
-        item.inventoryId || '',
+        item.inventoryId || shortItemId(item.id),
         item.title || '',
         item.artist || '',
         item.year || '',
@@ -1098,7 +1098,7 @@ function App() {
   const inventoryTemplateRows = [
     {
       'Database ID': '',
-      'Item ID': 'INV-0001',
+      'Inventory ID': '1a2b',
       Title: 'Sample Title',
       Artist: 'Sample Artist',
       Year: '2026',
@@ -1224,7 +1224,6 @@ function App() {
         }
 
         const payload = {
-          inventoryId: normalizeImportCell(row, ['Item ID', 'Inventory ID', 'inventoryId', 'inventory id']),
           title,
           artist,
           year: normalizeImportCell(row, ['Year', 'year']),
@@ -2068,7 +2067,7 @@ function App() {
         <body>
           <section class="sheet">
             <h1>${safeTitle}</h1>
-            <p><strong>Item ID:</strong> ${safeId}</p>
+            <p><strong>Inventory ID:</strong> ${safeId}</p>
             <img class="qr" src="${detailsQr}" alt="QR Code" />
           </section>
           <script>
@@ -2105,7 +2104,7 @@ function App() {
       <div className="details-main">
         <div className="details-grid">
           <p>
-            <strong>Item ID:</strong>{' '}
+            <strong>Inventory ID:</strong>{' '}
             <span title={selectedItem.inventoryId || selectedItem.id}>{getDisplayItemId(selectedItem)}</span>
           </p>
           <p>
@@ -2142,7 +2141,7 @@ function App() {
         <div className="qr-block">
           <h3>QR Code</h3>
           <p className="muted qr-item-id">
-            <strong>Item ID:</strong>{' '}
+            <strong>Inventory ID:</strong>{' '}
             <span title={selectedItem.inventoryId || selectedItem.id}>{getDisplayItemId(selectedItem)}</span>
           </p>
           {detailsQr ? (
@@ -3865,7 +3864,7 @@ function App() {
                     <div className="inventory-excel-card">
                       <h3>Import Inventory</h3>
                       <p className="muted">
-                        Upload an Excel or CSV file with columns like Database ID, Item ID, Title, Artist, Category, Place, and Price.
+                        Upload an Excel or CSV file with columns like Database ID, Inventory ID, Title, Artist, Category, Place, and Price.
                       </p>
                       <div className="actions">
                         <button type="button" className="ghost" onClick={handleDownloadInventoryTemplateExcel}>
