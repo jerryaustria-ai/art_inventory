@@ -1076,6 +1076,45 @@ button.danger {
   padding: 0.85rem;
 }
 
+.mobile-picture-card-footer {
+  gap: 0;
+  padding-top: 0.35rem;
+}
+
+.picture-expand-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.25rem 0 0;
+  background: transparent;
+  color: #1f2a2b;
+  border-radius: 0;
+}
+
+.picture-expand-title {
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+  font-weight: 700;
+}
+
+.picture-expand-toggle svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: 0 0 auto;
+  transition: transform 180ms ease;
+}
+
+.picture-expand-toggle.expanded svg {
+  transform: rotate(180deg);
+}
+
+.picture-card-details {
+  padding: 0.85rem 0 0.25rem;
+}
+
 .card.picture-only .card-actions {
   padding: 0;
   justify-content: space-between;
@@ -1688,6 +1727,10 @@ button.danger {
 
   .card-actions .card-action-link {
     min-width: 0;
+  }
+
+  .mobile-picture-card-footer .card-actions {
+    padding: 0 0 0.25rem;
   }
 
   .mobile-bottom-nav {

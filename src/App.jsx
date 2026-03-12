@@ -634,7 +634,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [placeFilter, setPlaceFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
-  const [displayMode, setDisplayMode] = useState('details');
+  const [displayMode, setDisplayMode] = useState('image');
   const [sortBy, setSortBy] = useState('title');
   const [visibleInventoryCount, setVisibleInventoryCount] = useState(20);
   const [isLoadingMoreInventory, setIsLoadingMoreInventory] = useState(false);
@@ -669,6 +669,7 @@ function App() {
   );
   const [imageZoom, setImageZoom] = useState(1);
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
+  const [expandedCardIds, setExpandedCardIds] = useState([]);
   const panStartRef = useRef({ x: 0, y: 0 });
   const panOriginRef = useRef({ x: 0, y: 0 });
   const isPanningRef = useRef(false);
@@ -1683,6 +1684,12 @@ function App() {
   const handleCloseSelectedItem = () => {
     setSelectedId('');
     setViewerReturnId('');
+  };
+
+  const toggleExpandedCard = (id) => {
+    setExpandedCardIds((previous) =>
+      previous.includes(id) ? previous.filter((itemId) => itemId !== id) : [...previous, id]
+    );
   };
 
   const handleDelete = async (id) => {
@@ -3019,9 +3026,15 @@ function App() {
           {filteredInventory.length === 0 ? <p>No paintings match your filters.</p> : null}
           {visibleInventory.map((item) => (
             <article
-              className={`card ${displayMode === 'image' ? 'picture-only' : ''} ${item.isActive ? '' : 'inactive-card'}`}
+              className={`card ${displayMode === 'image' ? 'picture-only' : ''} ${
+                item.isActive ? '' : 'inactive-card'
+              }`}
               key={item.id}
             >
+              {(() => {
+                const isExpanded = expandedCardIds.includes(item.id);
+                return (
+                  <>
               <button
                 type="button"
                 className="card-media-btn"
@@ -3066,53 +3079,146 @@ function App() {
                 </div>
               ) : null}
               {displayMode === 'image' ? (
-                <div className="picture-card-footer">
-                  <button type="button" className="picture-title-btn" onClick={() => setSelectedId(item.id)}>
-                    {item.title}
-                  </button>
-                  <div className="actions card-actions">
-                    {canManage ? (
+                isMobileViewport ? (
+                  <div className="picture-card-footer mobile-picture-card-footer">
+                    <button
+                      type="button"
+                      className={`picture-expand-toggle ${isExpanded ? 'expanded' : ''}`}
+                      onClick={() => toggleExpandedCard(item.id)}
+                      aria-expanded={isExpanded ? 'true' : 'false'}
+                    >
+                      <span className="picture-expand-title">{item.title || 'Untitled Item'}</span>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="m6 9 6 6 6-6"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                    {isExpanded ? (
                       <>
-                        {item.isActive ? (
-                          <>
-                            <button
-                              type="button"
-                              className={isMobileViewport ? 'card-action-link' : ''}
-                              onClick={() => handleEdit(item.id)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
-                              onClick={() => handleDelete(item.id)}
-                            >
-                              Delete
-                            </button>
-                          </>
-                        ) : null}
-                        {session?.role === 'super admin' && !item.isActive ? (
-                          <>
-                            <button
-                              type="button"
-                              className={isMobileViewport ? 'card-action-link' : ''}
-                              onClick={() => handleActivate(item.id)}
-                            >
-                              Activate
-                            </button>
-                            <button
-                              type="button"
-                              className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
-                              onClick={() => handlePermanentDelete(item.id)}
-                            >
-                              Delete Permanently
-                            </button>
-                          </>
-                        ) : null}
+                        <div className="card-body picture-card-details">
+                          <p className="muted">{item.artist || 'Artist not set'}</p>
+                          <p>
+                            {item.medium || 'Medium not set'} {item.year ? `(${item.year})` : ''}
+                          </p>
+                          <p>
+                            <strong>Category:</strong> {item.category || 'Not set'}
+                          </p>
+                          <p>{item.dimensions || 'Dimensions not set'}</p>
+                          <p>
+                            <strong>Status:</strong> {item.status}
+                          </p>
+                          {!item.isActive ? <p className="inactive-label">Inventory State: Inactive</p> : null}
+                          <p>
+                            <strong>Place:</strong> {item.place || 'Not set'}
+                          </p>
+                          <p>
+                            <strong>Storage Location:</strong> {item.storageLocation || 'Not set'}
+                          </p>
+                          <p>
+                            <strong>Price:</strong> {formatPhp(item.price)}
+                          </p>
+                          {item.notes ? <p className="notes">{item.notes}</p> : null}
+                        </div>
+                        <div className="actions card-actions">
+                          {canManage ? (
+                            <>
+                              {item.isActive ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="card-action-link"
+                                    onClick={() => handleEdit(item.id)}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="card-action-link card-action-link-danger"
+                                    onClick={() => handleDelete(item.id)}
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              ) : null}
+                              {session?.role === 'super admin' && !item.isActive ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="card-action-link"
+                                    onClick={() => handleActivate(item.id)}
+                                  >
+                                    Activate
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="card-action-link card-action-link-danger"
+                                    onClick={() => handlePermanentDelete(item.id)}
+                                  >
+                                    Delete Permanently
+                                  </button>
+                                </>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </div>
                       </>
                     ) : null}
                   </div>
-                </div>
+                ) : (
+                  <div className="picture-card-footer">
+                    <button type="button" className="picture-title-btn" onClick={() => setSelectedId(item.id)}>
+                      {item.title}
+                    </button>
+                    <div className="actions card-actions">
+                      {canManage ? (
+                        <>
+                          {item.isActive ? (
+                            <>
+                              <button
+                                type="button"
+                                className={isMobileViewport ? 'card-action-link' : ''}
+                                onClick={() => handleEdit(item.id)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
+                                onClick={() => handleDelete(item.id)}
+                              >
+                                Delete
+                              </button>
+                            </>
+                          ) : null}
+                          {session?.role === 'super admin' && !item.isActive ? (
+                            <>
+                              <button
+                                type="button"
+                                className={isMobileViewport ? 'card-action-link' : ''}
+                                onClick={() => handleActivate(item.id)}
+                              >
+                                Activate
+                              </button>
+                              <button
+                                type="button"
+                                className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
+                                onClick={() => handlePermanentDelete(item.id)}
+                              >
+                                Delete Permanently
+                              </button>
+                            </>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                )
               ) : (
               <div className="actions card-actions">
                 {canManage ? (
@@ -3157,6 +3263,9 @@ function App() {
                 ) : null}
               </div>
               )}
+                  </>
+                );
+              })()}
             </article>
           ))}
           {isLoadingMoreInventory
