@@ -1,7 +1,7 @@
 import express from 'express';
 import Artwork from '../models/Artwork.js';
 import { readActorFromRequest, writeAuditLog } from '../utils/audit.js';
-import { resolveArtworkImageUrl } from '../utils/cloudinary.js';
+import { deleteArtworkImage, uploadArtworkImage } from '../utils/cloudinary.js';
 
 const router = express.Router();
 
@@ -44,10 +44,9 @@ async function ensureInventoryId(artwork) {
   return artwork;
 }
 
-async function sanitizeArtworkPayload(body = {}) {
+function sanitizeArtworkPayload(body = {}) {
   const payload = { ...body };
   delete payload.inventoryId;
-  payload.imageUrl = await resolveArtworkImageUrl(payload.imageUrl);
   return payload;
 }
 
@@ -84,7 +83,11 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const artwork = await Artwork.create(await sanitizeArtworkPayload(req.body));
+    const payload = sanitizeArtworkPayload(req.body);
+    const uploadedImage = await uploadArtworkImage(payload.imageUrl);
+    payload.imageUrl = uploadedImage.imageUrl;
+    payload.imagePublicId = uploadedImage.imagePublicId;
+    const artwork = await Artwork.create(payload);
     await ensureInventoryId(artwork);
     res.status(201).json(artwork);
   } catch (error) {
@@ -94,17 +97,46 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
+    const existing = await Artwork.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: 'Artwork not found' });
+    }
+
+    const payload = sanitizeArtworkPayload(req.body);
+    const nextImageUrl = String(payload.imageUrl ?? '').trim();
+    const currentImageUrl = String(existing.imageUrl || '').trim();
+    const currentImagePublicId = String(existing.imagePublicId || '').trim();
+    const isReplacingImage = Boolean(nextImageUrl) && nextImageUrl !== currentImageUrl;
+    const isRemovingImage = !nextImageUrl && Boolean(currentImageUrl);
+
+    if (isReplacingImage) {
+      const uploadedImage = await uploadArtworkImage(nextImageUrl);
+      payload.imageUrl = uploadedImage.imageUrl;
+      payload.imagePublicId = uploadedImage.imagePublicId;
+    } else if (isRemovingImage) {
+      payload.imageUrl = '';
+      payload.imagePublicId = '';
+    } else {
+      payload.imageUrl = currentImageUrl;
+      payload.imagePublicId = currentImagePublicId;
+    }
+
     const updated = await Artwork.findByIdAndUpdate(
       req.params.id,
-      await sanitizeArtworkPayload(req.body),
+      payload,
       {
         new: true,
         runValidators: true,
       }
     );
-    if (!updated) {
-      return res.status(404).json({ message: 'Artwork not found' });
+
+    if (isReplacingImage || isRemovingImage) {
+      await deleteArtworkImage({
+        imagePublicId: currentImagePublicId,
+        imageUrl: currentImageUrl,
+      });
     }
+
     await ensureInventoryId(updated);
     res.json(updated);
   } catch (error) {
@@ -156,6 +188,11 @@ router.delete('/:id/permanent', async (req, res) => {
     if (!deleted) {
       return res.status(404).json({ message: 'Artwork not found' });
     }
+
+    await deleteArtworkImage({
+      imagePublicId: deleted.imagePublicId,
+      imageUrl: deleted.imageUrl,
+    });
 
     await writeAuditLog({
       action: 'inventory.delete_permanent',

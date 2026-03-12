@@ -79,6 +79,7 @@ function normalizeArtwork(item) {
     ...item,
     id: item._id,
     inventoryId: item.inventoryId || '',
+    imagePublicId: item.imagePublicId || '',
     category: item.category || '',
     place: item.place || '',
     storageLocation: item.storageLocation || '',

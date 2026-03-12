@@ -19,6 +19,7 @@ const artworkSchema = new mongoose.Schema(
     price: { type: String, default: '' },
     notes: { type: String, default: '' },
     imageUrl: { type: String, default: '' },
+    imagePublicId: { type: String, default: '', trim: true },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
