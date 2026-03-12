@@ -3662,10 +3662,21 @@ function App() {
           <button
             type="button"
             className={currentPage === 'inventory' ? 'active' : ''}
-            onClick={() => setCurrentPage('inventory')}
+            onClick={() => window.location.reload()}
           >
-            <span className="mobile-bottom-icon">[]</span>
-            <span>Home</span>
+            <span className="mobile-bottom-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="M20 12a8 8 0 1 1-2.34-5.66M20 4v6h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <span>Refresh</span>
           </button>
           {canOpenAdminPage ? (
             <button

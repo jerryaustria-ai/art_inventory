@@ -1782,6 +1782,16 @@ button.danger {
     font-size: 0.82rem;
     font-weight: 800;
     letter-spacing: -0.04em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.1rem;
+  }
+
+  .mobile-bottom-icon svg {
+    width: 1.15rem;
+    height: 1.15rem;
+    display: block;
   }
 
   .qr-scanner-modal {
