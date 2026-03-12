@@ -152,6 +152,10 @@ header p {
 }
 
 .mobile-header-title {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
   font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: -0.03em;

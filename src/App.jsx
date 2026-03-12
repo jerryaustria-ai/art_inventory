@@ -651,8 +651,8 @@ function App() {
   const [placeFilter, setPlaceFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [displayMode, setDisplayMode] = useState('image');
-  const [sortBy, setSortBy] = useState('title');
-  const [sortDirection, setSortDirection] = useState('asc');
+  const [sortBy, setSortBy] = useState('recent');
+  const [sortDirection, setSortDirection] = useState('desc');
   const [visibleInventoryCount, setVisibleInventoryCount] = useState(20);
   const [isLoadingMoreInventory, setIsLoadingMoreInventory] = useState(false);
   const [userItemsPerPage, setUserItemsPerPage] = useState(20);
@@ -1486,6 +1486,9 @@ function App() {
 
     return filtered.sort((a, b) => {
       const direction = sortDirection === 'desc' ? -1 : 1;
+      if (sortBy === 'recent') {
+        return (new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()) * direction;
+      }
       if (sortBy === 'price') {
         return (Number(a.price || 0) - Number(b.price || 0)) * direction;
       }
@@ -1829,16 +1832,16 @@ function App() {
     statusFilter !== 'All' ||
     placeFilter !== 'All' ||
     categoryFilter !== 'All' ||
-    sortBy !== 'title' ||
-    sortDirection !== 'asc';
+    sortBy !== 'recent' ||
+    sortDirection !== 'desc';
 
   const clearAllFilters = () => {
     setSearch('');
     setStatusFilter('All');
     setPlaceFilter('All');
     setCategoryFilter('All');
-    setSortBy('title');
-    setSortDirection('asc');
+    setSortBy('recent');
+    setSortDirection('desc');
   };
 
   const activeFilterCount =
@@ -1846,16 +1849,16 @@ function App() {
     Number(statusFilter !== 'All') +
     Number(placeFilter !== 'All') +
     Number(categoryFilter !== 'All') +
-    Number(sortBy !== 'title') +
-    Number(sortDirection !== 'asc');
+    Number(sortBy !== 'recent') +
+    Number(sortDirection !== 'desc');
 
   const activeFilterSummary = [
     search.trim() ? `Search: ${search.trim()}` : '',
     statusFilter !== 'All' ? `Status: ${statusFilter}` : '',
     placeFilter !== 'All' ? `Location: ${placeFilter}` : '',
     categoryFilter !== 'All' ? `Category: ${categoryFilter}` : '',
-    sortBy !== 'title' ? `Sort: ${sortBy}` : '',
-    sortDirection !== 'asc' ? `Direction: ${sortDirection}` : '',
+    sortBy !== 'recent' ? `Sort: ${sortBy}` : '',
+    sortDirection !== 'desc' ? `Direction: ${sortDirection}` : '',
   ]
     .filter(Boolean)
     .join(' • ');
@@ -2558,7 +2561,17 @@ function App() {
                 </svg>
               </button>
               </div>
-              <span className="mobile-header-title">Artworkz</span>
+              <button
+                type="button"
+                className="mobile-header-title"
+                onClick={() => {
+                  setCurrentPage('inventory');
+                  setIsMobileMenuOpen(false);
+                  setIsMobileSearchOpen(false);
+                }}
+              >
+                Artworkz
+              </button>
             </div>
             <button
               type="button"
@@ -2992,6 +3005,7 @@ function App() {
             <option value="Unassigned">Unassigned</option>
           </select>
           <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+            <option value="recent">Sort: Recent</option>
             <option value="title">Sort: Title</option>
             <option value="year">Sort: Year</option>
             <option value="price">Sort: Price</option>
@@ -3406,6 +3420,7 @@ function App() {
               <label>
                 Sort
                 <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+                  <option value="recent">Sort: Recent</option>
                   <option value="title">Sort: Title</option>
                   <option value="year">Sort: Year</option>
                   <option value="price">Sort: Price</option>
