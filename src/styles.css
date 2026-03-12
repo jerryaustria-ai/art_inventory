@@ -629,6 +629,14 @@ button.danger {
   gap: 0.9rem;
 }
 
+.inventory-main-section-mobile {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
 .mobile-form-page {
   display: grid;
   gap: 1rem;
@@ -1270,6 +1278,19 @@ button.danger {
   padding: 0 0.8rem 0.8rem;
 }
 
+.card-action-link {
+  background: transparent;
+  color: #0f766e;
+  padding: 0;
+  border-radius: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.card-action-link-danger {
+  color: #b42318;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1638,6 +1659,10 @@ button.danger {
     display: none;
   }
 
+  .inventory-main-section-mobile {
+    margin-top: 0;
+  }
+
   .card-grid {
     gap: 0.95rem;
     grid-template-columns: 1fr;
@@ -1659,6 +1684,10 @@ button.danger {
 
   .card {
     border-radius: 0;
+  }
+
+  .card-actions .card-action-link {
+    min-width: 0;
   }
 
   .mobile-bottom-nav {

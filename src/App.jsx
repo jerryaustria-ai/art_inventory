@@ -240,7 +240,7 @@ function getCategoryStatIcon(category) {
   );
 }
 
-function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, categories = [] }) {
+function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, categories = [], submitError = '' }) {
   const [form, setForm] = useState(editingItem || blankForm);
   const [formError, setFormError] = useState('');
 
@@ -288,6 +288,7 @@ function InventoryForm({ onSubmit, editingItem, onCancel, hideTitle = false, cat
     <form className="form-grid" onSubmit={handleSubmit}>
       {!hideTitle ? <h2>{editingItem ? 'Edit Painting' : 'Add New Item'}</h2> : null}
       {formError ? <p className="form-error">{formError}</p> : null}
+      {!formError && submitError ? <p className="form-error">{submitError}</p> : null}
       <label>
         Artwork Category *
         <select name="category" value={form.category} onChange={handleChange} required>
@@ -628,6 +629,7 @@ function App() {
   const [editingUserId, setEditingUserId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState('');
+  const [inventoryFormError, setInventoryFormError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [placeFilter, setPlaceFilter] = useState('All');
@@ -1615,13 +1617,14 @@ function App() {
         setInventory((previous) => previous.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
         setEditingId('');
         setIsFormOpen(false);
+        setInventoryFormError('');
         if (returnDetailsId) {
           setSelectedId(returnDetailsId);
           setReturnDetailsId('');
         }
         setApiError('');
       } catch {
-        setApiError('Failed to update item. Please try again.');
+        setInventoryFormError('Failed to update item. Please try again.');
       } finally {
         setIsInventoryMutating(false);
       }
@@ -1641,15 +1644,17 @@ function App() {
       const createdItem = normalizeArtwork(await response.json());
       setInventory((previous) => [createdItem, ...previous]);
       setIsFormOpen(false);
+      setInventoryFormError('');
       setApiError('');
     } catch {
-      setApiError('Failed to add item. Please try again.');
+      setInventoryFormError('Failed to add item. Please try again.');
     } finally {
       setIsInventoryMutating(false);
     }
   };
 
   const handleAddNew = () => {
+    setInventoryFormError('');
     setEditingId('');
     setCurrentPage('inventory');
     setIsUserModalOpen(false);
@@ -1660,11 +1665,13 @@ function App() {
   };
 
   const handleEdit = (id) => {
+    setInventoryFormError('');
     setEditingId(id);
     setIsFormOpen(true);
   };
 
   const handleCloseForm = () => {
+    setInventoryFormError('');
     setEditingId('');
     setIsFormOpen(false);
     if (returnDetailsId) {
@@ -2612,7 +2619,7 @@ function App() {
               Logged in as: <strong>{session.role}</strong> ({session.email})
             </p>
             {isLoading ? <p className="muted">Loading inventory...</p> : null}
-            {apiError ? <p className="form-error">{apiError}</p> : null}
+            {!isFormOpen && apiError ? <p className="form-error">{apiError}</p> : null}
           </div>
           <div className="actions desktop-nav-actions">
             <button
@@ -2836,6 +2843,7 @@ function App() {
               onCancel={handleCloseForm}
               hideTitle
               categories={categoryOptions}
+              submitError={inventoryFormError}
             />
           </section>
         ) : isMobileDetailsPage ? (
@@ -2907,7 +2915,10 @@ function App() {
         </div>
       ) : null}
 
-      <section className="panel controls" ref={inventorySectionRef}>
+      <section
+        className={`controls inventory-main-section ${isMobileViewport ? 'inventory-main-section-mobile' : 'panel'}`}
+        ref={inventorySectionRef}
+      >
         <div className="heading-row">
           <h2>Inventory</h2>
           {canManage ? (
@@ -3064,20 +3075,36 @@ function App() {
                       <>
                         {item.isActive ? (
                           <>
-                            <button type="button" onClick={() => handleEdit(item.id)}>
+                            <button
+                              type="button"
+                              className={isMobileViewport ? 'card-action-link' : ''}
+                              onClick={() => handleEdit(item.id)}
+                            >
                               Edit
                             </button>
-                            <button type="button" className="danger" onClick={() => handleDelete(item.id)}>
+                            <button
+                              type="button"
+                              className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
+                              onClick={() => handleDelete(item.id)}
+                            >
                               Delete
                             </button>
                           </>
                         ) : null}
                         {session?.role === 'super admin' && !item.isActive ? (
                           <>
-                            <button type="button" onClick={() => handleActivate(item.id)}>
+                            <button
+                              type="button"
+                              className={isMobileViewport ? 'card-action-link' : ''}
+                              onClick={() => handleActivate(item.id)}
+                            >
                               Activate
                             </button>
-                            <button type="button" className="danger" onClick={() => handlePermanentDelete(item.id)}>
+                            <button
+                              type="button"
+                              className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
+                              onClick={() => handlePermanentDelete(item.id)}
+                            >
                               Delete Permanently
                             </button>
                           </>
@@ -3092,20 +3119,36 @@ function App() {
                   <>
                     {item.isActive ? (
                       <>
-                        <button type="button" onClick={() => handleEdit(item.id)}>
+                        <button
+                          type="button"
+                          className={isMobileViewport ? 'card-action-link' : ''}
+                          onClick={() => handleEdit(item.id)}
+                        >
                           Edit
                         </button>
-                        <button type="button" className="danger" onClick={() => handleDelete(item.id)}>
+                        <button
+                          type="button"
+                          className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
+                          onClick={() => handleDelete(item.id)}
+                        >
                           Delete
                         </button>
                       </>
                     ) : null}
                     {session?.role === 'super admin' && !item.isActive ? (
                       <>
-                        <button type="button" onClick={() => handleActivate(item.id)}>
+                        <button
+                          type="button"
+                          className={isMobileViewport ? 'card-action-link' : ''}
+                          onClick={() => handleActivate(item.id)}
+                        >
                           Activate
                         </button>
-                        <button type="button" className="danger" onClick={() => handlePermanentDelete(item.id)}>
+                        <button
+                          type="button"
+                          className={isMobileViewport ? 'card-action-link card-action-link-danger' : 'danger'}
+                          onClick={() => handlePermanentDelete(item.id)}
+                        >
                           Delete Permanently
                         </button>
                       </>
@@ -3143,6 +3186,7 @@ function App() {
               editingItem={editingItem}
               onCancel={handleCloseForm}
               categories={categoryOptions}
+              submitError={inventoryFormError}
             />
           </section>
         </div>
