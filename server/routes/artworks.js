@@ -59,8 +59,7 @@ router.get('/', async (req, res) => {
     const includeInactive = String(req.query.includeInactive || '').toLowerCase() === 'true';
     const query =
       actorRole === 'super admin' && includeInactive ? {} : { isActive: { $ne: false } };
-    const artworks = await Artwork.find(query).sort({ createdAt: -1 });
-    await Promise.all(artworks.map((artwork) => ensureInventoryId(artwork)));
+    const artworks = await Artwork.find(query).sort({ createdAt: -1 }).lean();
     return res.json(artworks);
   } catch {
     return res.status(500).json({ message: 'Failed to fetch artworks' });

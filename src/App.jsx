@@ -1002,10 +1002,12 @@ function App() {
 
     const loadAppData = async () => {
       try {
-        const [data] = await Promise.all([fetchInventory(session), fetchCategories(), fetchLocations()]);
+        const data = await fetchInventory(session);
         if (!isMounted) return;
         setInventory(data);
         setApiError('');
+        void fetchCategories(false, { silent: true });
+        void fetchLocations({ silent: true });
       } catch {
         if (!isMounted) return;
         setApiError('API unavailable. Check server and MongoDB connection.');
@@ -1176,12 +1178,15 @@ function App() {
     }
   };
 
-  const fetchCategories = async (force = false) => {
+  const fetchCategories = async (force = false, options = {}) => {
+    const { silent = false } = options;
     if (!force && (hasLoadedCategoriesRef.current || isCategoriesLoading)) {
       return;
     }
 
-    setIsCategoriesLoading(true);
+    if (!silent) {
+      setIsCategoriesLoading(true);
+    }
     try {
       const response = await fetch(`${API_BASE}/categories`);
       if (!response.ok) {
@@ -1201,12 +1206,17 @@ function App() {
       hasLoadedCategoriesRef.current = false;
       setApiError('Failed to load categories.');
     } finally {
-      setIsCategoriesLoading(false);
+      if (!silent) {
+        setIsCategoriesLoading(false);
+      }
     }
   };
 
-  const fetchLocations = async () => {
-    setIsLocationsLoading(true);
+  const fetchLocations = async (options = {}) => {
+    const { silent = false } = options;
+    if (!silent) {
+      setIsLocationsLoading(true);
+    }
     try {
       const response = await fetch(`${API_BASE}/locations`);
       if (!response.ok) {
@@ -1228,7 +1238,9 @@ function App() {
     } catch {
       setApiError('Failed to load locations.');
     } finally {
-      setIsLocationsLoading(false);
+      if (!silent) {
+        setIsLocationsLoading(false);
+      }
     }
   };
 
