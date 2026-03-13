@@ -30,7 +30,9 @@ export default function AdminPage({
   auditTotalPages,
   visibleAuditPageNumbers,
   categorySectionContent,
+  locationSectionContent,
   fetchCategories,
+  fetchLocations,
   handleDownloadInventoryTemplateExcel,
   handleDownloadInventoryTemplateCsv,
   handleImportInventoryExcel,
@@ -253,6 +255,8 @@ export default function AdminPage({
               </div>
             ) : null}
           </article>
+        ) : adminSection === 'locations' ? (
+          locationSectionContent
         ) : (
           categorySectionContent
         )}
@@ -280,6 +284,16 @@ export default function AdminPage({
             }}
           >
             Categories
+          </button>
+          <button
+            type="button"
+            className={adminSection === 'locations' ? 'active' : ''}
+            onClick={() => {
+              setAdminSection('locations');
+              fetchLocations();
+            }}
+          >
+            Locations
           </button>
           <button
             type="button"
@@ -503,6 +517,8 @@ export default function AdminPage({
           </article>
         ) : adminSection === 'categories' ? (
           categorySectionContent
+        ) : adminSection === 'locations' ? (
+          locationSectionContent
         ) : (
           <article className="panel controls">
             <div className="heading-row">

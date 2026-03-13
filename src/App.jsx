@@ -85,6 +85,22 @@ function getArtworkArtist(value) {
   return String(value || '').trim() || 'Artist not set';
 }
 
+function toRadians(value) {
+  return (value * Math.PI) / 180;
+}
+
+function getDistanceInMeters(left, right) {
+  const earthRadius = 6371000;
+  const deltaLatitude = toRadians(right.latitude - left.latitude);
+  const deltaLongitude = toRadians(right.longitude - left.longitude);
+  const latitudeOne = toRadians(left.latitude);
+  const latitudeTwo = toRadians(right.latitude);
+  const a =
+    Math.sin(deltaLatitude / 2) ** 2 +
+    Math.cos(latitudeOne) * Math.cos(latitudeTwo) * Math.sin(deltaLongitude / 2) ** 2;
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function normalizeArtwork(item) {
   return {
     ...item,
@@ -146,6 +162,14 @@ const blankMoveForm = {
   place: '',
   storageLocation: '',
   note: '',
+};
+
+const blankLocationForm = {
+  name: '',
+  latitude: '',
+  longitude: '',
+  radiusMeters: '50',
+  notes: '',
 };
 
 function formatDateTime(value) {
@@ -648,6 +672,8 @@ function App() {
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(false);
+  const [locations, setLocations] = useState([]);
+  const [isLocationsLoading, setIsLocationsLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [auditActionFilter, setAuditActionFilter] = useState('all');
@@ -655,6 +681,9 @@ function App() {
   const [editingCategoryId, setEditingCategoryId] = useState('');
   const [categoryName, setCategoryName] = useState('');
   const [categoryFormError, setCategoryFormError] = useState('');
+  const [editingLocationId, setEditingLocationId] = useState('');
+  const [locationForm, setLocationForm] = useState(blankLocationForm);
+  const [locationFormError, setLocationFormError] = useState('');
   const [isInventoryImporting, setIsInventoryImporting] = useState(false);
   const [inventoryImportMessage, setInventoryImportMessage] = useState('');
   const [inventoryImportError, setInventoryImportError] = useState('');
@@ -684,6 +713,8 @@ function App() {
   const [detailsQr, setDetailsQr] = useState('');
   const [locationHistory, setLocationHistory] = useState([]);
   const [isLocationHistoryLoading, setIsLocationHistoryLoading] = useState(false);
+  const [gpsVerificationResult, setGpsVerificationResult] = useState(null);
+  const [isGpsVerifying, setIsGpsVerifying] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [moveForm, setMoveForm] = useState(blankMoveForm);
   const [moveFormError, setMoveFormError] = useState('');
@@ -942,6 +973,7 @@ function App() {
       setIsLoading(false);
       setInventory([]);
       setCategories([]);
+      setLocations([]);
       return;
     }
 
@@ -949,7 +981,7 @@ function App() {
 
     const loadAppData = async () => {
       try {
-        const [data] = await Promise.all([fetchInventory(session), fetchCategories()]);
+        const [data] = await Promise.all([fetchInventory(session), fetchCategories(), fetchLocations()]);
         if (!isMounted) return;
         setInventory(data);
         setApiError('');
@@ -967,6 +999,10 @@ function App() {
       isMounted = false;
     };
   }, [session]);
+
+  useEffect(() => {
+    setGpsVerificationResult(null);
+  }, [selectedItem?.id]);
 
   useEffect(() => {
     updateItemIdInUrl(selectedId);
@@ -1092,6 +1128,33 @@ function App() {
       setApiError('Failed to load categories.');
     } finally {
       setIsCategoriesLoading(false);
+    }
+  };
+
+  const fetchLocations = async () => {
+    setIsLocationsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/locations`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch locations');
+      }
+      const data = await response.json();
+      const normalized = Array.isArray(data)
+        ? data.map((item) => ({
+            id: item._id || item.id,
+            name: item.name || '',
+            latitude: Number(item.latitude || 0),
+            longitude: Number(item.longitude || 0),
+            radiusMeters: Number(item.radiusMeters || 50),
+            notes: item.notes || '',
+          }))
+        : [];
+      setLocations(normalized);
+      setApiError('');
+    } catch {
+      setApiError('Failed to load locations.');
+    } finally {
+      setIsLocationsLoading(false);
     }
   };
 
@@ -1450,6 +1513,12 @@ function App() {
     setCategoryFormError('');
   };
 
+  const resetLocationForm = () => {
+    setEditingLocationId('');
+    setLocationForm(blankLocationForm);
+    setLocationFormError('');
+  };
+
   const handleSubmitCategory = async (event) => {
     event.preventDefault();
     const trimmedName = categoryName.trim();
@@ -1549,6 +1618,160 @@ function App() {
       setApiError('');
     } catch (error) {
       setApiError(error.message || 'Failed to delete category.');
+    }
+  };
+
+  const handleSubmitLocation = async (event) => {
+    event.preventDefault();
+    const payload = {
+      name: String(locationForm.name || '').trim(),
+      latitude: Number(locationForm.latitude),
+      longitude: Number(locationForm.longitude),
+      radiusMeters: Number(locationForm.radiusMeters || 50),
+      notes: String(locationForm.notes || '').trim(),
+    };
+
+    if (!payload.name) {
+      setLocationFormError('Location name is required.');
+      return;
+    }
+    if (!Number.isFinite(payload.latitude) || !Number.isFinite(payload.longitude)) {
+      setLocationFormError('Valid latitude and longitude are required.');
+      return;
+    }
+
+    setLocationFormError('');
+
+    try {
+      const response = await fetch(
+        editingLocationId ? `${API_BASE}/locations/${editingLocationId}` : `${API_BASE}/locations`,
+        {
+          method: editingLocationId ? 'PUT' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-actor-id': session?.id || '',
+            'x-actor-email': session?.email || '',
+            'x-actor-role': session?.role || '',
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload.message || 'Failed to save location.');
+      }
+
+      await fetchLocations();
+      resetLocationForm();
+      setApiError('');
+    } catch (error) {
+      setLocationFormError(error.message || 'Failed to save location.');
+    }
+  };
+
+  const handleEditLocation = (location) => {
+    setEditingLocationId(location.id);
+    setLocationForm({
+      name: location.name || '',
+      latitude: String(location.latitude ?? ''),
+      longitude: String(location.longitude ?? ''),
+      radiusMeters: String(location.radiusMeters ?? 50),
+      notes: location.notes || '',
+    });
+    setLocationFormError('');
+  };
+
+  const handleDeleteLocation = async (location) => {
+    const confirmed = window.confirm(`Delete location "${location.name}"?`);
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/locations/${location.id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-actor-id': session?.id || '',
+          'x-actor-email': session?.email || '',
+          'x-actor-role': session?.role || '',
+        },
+      });
+      if (!response.ok && response.status !== 204) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || 'Failed to delete location.');
+      }
+      await fetchLocations();
+      if (editingLocationId === location.id) {
+        resetLocationForm();
+      }
+      setApiError('');
+    } catch (error) {
+      setApiError(error.message || 'Failed to delete location.');
+    }
+  };
+
+  const handleVerifyGpsLocation = async () => {
+    if (!selectedItem) return;
+    const expectedLocation = locations.find(
+      (location) => location.name.trim().toLowerCase() === String(selectedItem.place || '').trim().toLowerCase()
+    );
+
+    if (!expectedLocation) {
+      setGpsVerificationResult({
+        status: 'missing',
+        message: 'No GPS master location is mapped to this artwork place yet.',
+      });
+      return;
+    }
+
+    if (!navigator?.geolocation) {
+      setGpsVerificationResult({
+        status: 'error',
+        message: 'Geolocation is not supported on this device.',
+      });
+      return;
+    }
+
+    setIsGpsVerifying(true);
+    setGpsVerificationResult(null);
+
+    try {
+      const coords = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 10000,
+        });
+      });
+
+      const distanceMeters = getDistanceInMeters(
+        {
+          latitude: expectedLocation.latitude,
+          longitude: expectedLocation.longitude,
+        },
+        {
+          latitude: coords.coords.latitude,
+          longitude: coords.coords.longitude,
+        }
+      );
+
+      const radiusMeters = Number(expectedLocation.radiusMeters || 50);
+      const isMatch = distanceMeters <= radiusMeters;
+
+      setGpsVerificationResult({
+        status: isMatch ? 'match' : 'mismatch',
+        message: isMatch
+          ? `Location verified. Device is within ${Math.round(distanceMeters)}m of ${expectedLocation.name}.`
+          : `Location mismatch. Device is about ${Math.round(distanceMeters)}m away from ${expectedLocation.name}.`,
+        distanceMeters,
+        expectedLocation,
+      });
+    } catch (error) {
+      setGpsVerificationResult({
+        status: 'error',
+        message: error?.message || 'Unable to get device GPS location.',
+      });
+    } finally {
+      setIsGpsVerifying(false);
     }
   };
 
@@ -2422,6 +2645,15 @@ function App() {
           <p>
             <strong>Storage Location:</strong> {selectedItem.storageLocation || 'Not set'}
           </p>
+          <div className="gps-verify-block">
+            <p>
+              <strong>GPS Verification:</strong>{' '}
+              {gpsVerificationResult ? gpsVerificationResult.message : 'Not checked yet'}
+            </p>
+            <button type="button" className="ghost" onClick={handleVerifyGpsLocation} disabled={isGpsVerifying}>
+              {isGpsVerifying ? 'Checking GPS...' : 'Verify Current Location'}
+            </button>
+          </div>
           <p>
             <strong>Price:</strong> {formatPhp(selectedItem.price)}
           </p>
@@ -2557,6 +2789,84 @@ function App() {
                 Edit
               </button>
               <button type="button" className="danger" onClick={() => handleDeleteCategory(category)}>
+                Delete
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </article>
+  );
+
+  const locationSectionContent = (
+    <article className="panel controls">
+      <div className="heading-row">
+        <h2>Locations</h2>
+      </div>
+      <form className="category-manager-form" onSubmit={handleSubmitLocation}>
+        <input
+          type="text"
+          value={locationForm.name}
+          onChange={(event) => {
+            setLocationForm((previous) => ({ ...previous, name: event.target.value }));
+            if (locationFormError) setLocationFormError('');
+          }}
+          placeholder="Location name"
+        />
+        <input
+          type="number"
+          step="any"
+          value={locationForm.latitude}
+          onChange={(event) => setLocationForm((previous) => ({ ...previous, latitude: event.target.value }))}
+          placeholder="Latitude"
+        />
+        <input
+          type="number"
+          step="any"
+          value={locationForm.longitude}
+          onChange={(event) => setLocationForm((previous) => ({ ...previous, longitude: event.target.value }))}
+          placeholder="Longitude"
+        />
+        <input
+          type="number"
+          min="1"
+          value={locationForm.radiusMeters}
+          onChange={(event) => setLocationForm((previous) => ({ ...previous, radiusMeters: event.target.value }))}
+          placeholder="Radius meters"
+        />
+        <textarea
+          value={locationForm.notes}
+          onChange={(event) => setLocationForm((previous) => ({ ...previous, notes: event.target.value }))}
+          rows={2}
+          placeholder="Notes"
+        />
+        {locationFormError ? <p className="form-error category-form-error">{locationFormError}</p> : null}
+        <div className="actions">
+          <button type="submit">{editingLocationId ? 'Update Location' : 'Add Location'}</button>
+          {editingLocationId ? (
+            <button type="button" className="ghost" onClick={resetLocationForm}>
+              Cancel
+            </button>
+          ) : null}
+        </div>
+      </form>
+      {isLocationsLoading ? <p className="muted">Loading locations...</p> : null}
+      <div className="user-list">
+        {locations.length === 0 ? <p>No locations found.</p> : null}
+        {locations.map((location) => (
+          <article className="category-item" key={location.id}>
+            <div>
+              <strong>{location.name}</strong>
+              <p className="muted">
+                {location.latitude}, {location.longitude} • {location.radiusMeters}m
+              </p>
+              {location.notes ? <p className="muted">{location.notes}</p> : null}
+            </div>
+            <div className="actions">
+              <button type="button" onClick={() => handleEditLocation(location)}>
+                Edit
+              </button>
+              <button type="button" className="danger" onClick={() => handleDeleteLocation(location)}>
                 Delete
               </button>
             </div>
@@ -3174,6 +3484,21 @@ function App() {
                         }}
                       >
                         <span>Categories</span>
+                        <span className="mobile-menu-chevron" aria-hidden="true">
+                          ›
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`mobile-menu-subitem ${currentPage === 'admin' && adminSection === 'locations' ? '' : 'ghost'}`}
+                        onClick={() => {
+                          setCurrentPage('admin');
+                          setAdminSection('locations');
+                          setIsMobileMenuOpen(false);
+                          fetchLocations();
+                        }}
+                      >
+                        <span>Locations</span>
                         <span className="mobile-menu-chevron" aria-hidden="true">
                           ›
                         </span>
@@ -4082,7 +4407,9 @@ function App() {
             auditTotalPages={auditTotalPages}
             visibleAuditPageNumbers={visibleAuditPageNumbers}
             categorySectionContent={categorySectionContent}
+            locationSectionContent={locationSectionContent}
             fetchCategories={fetchCategories}
+            fetchLocations={fetchLocations}
             handleDownloadInventoryTemplateExcel={handleDownloadInventoryTemplateExcel}
             handleDownloadInventoryTemplateCsv={handleDownloadInventoryTemplateCsv}
             handleImportInventoryExcel={handleImportInventoryExcel}

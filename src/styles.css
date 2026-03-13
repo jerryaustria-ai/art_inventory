@@ -1189,6 +1189,11 @@ button.danger {
   background: #f8fbfb;
 }
 
+.gps-verify-block {
+  display: grid;
+  gap: 0.4rem;
+}
+
 .qr-block {
   min-width: 190px;
 }

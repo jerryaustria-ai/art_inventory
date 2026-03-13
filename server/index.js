@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs'
 import mongoose from 'mongoose'
 import artworksRouter from './routes/artworks.js'
 import categoriesRouter from './routes/categories.js'
+import locationsRouter from './routes/locations.js'
 import Category from './models/Category.js'
 import User from './models/User.js'
 import auditLogsRouter from './routes/auditLogs.js'
@@ -35,6 +36,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/artworks', artworksRouter)
 app.use('/api/categories', categoriesRouter)
+app.use('/api/locations', locationsRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/audit-logs', auditLogsRouter)
 
