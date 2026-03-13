@@ -2445,6 +2445,11 @@ function App() {
     setSortDirection('desc');
   };
 
+  const handleCloseMobileSearch = () => {
+    clearAllFilters();
+    setIsMobileSearchOpen(false);
+  };
+
   const activeFilterCount =
     Number(search.trim() !== '') +
     Number(statusFilter !== 'All') +
@@ -3522,7 +3527,7 @@ function App() {
               <button
                 type="button"
                 className="mobile-search-close"
-                onClick={() => setIsMobileSearchOpen(false)}
+                onClick={handleCloseMobileSearch}
                 aria-label="Close search"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
