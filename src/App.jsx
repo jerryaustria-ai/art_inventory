@@ -717,6 +717,7 @@ function App() {
   const [isGpsVerifying, setIsGpsVerifying] = useState(false);
   const [shouldCheckGpsAfterQrScan, setShouldCheckGpsAfterQrScan] = useState(false);
   const [qrLocationWarning, setQrLocationWarning] = useState(null);
+  const [moveTargetItemId, setMoveTargetItemId] = useState('');
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [moveForm, setMoveForm] = useState(blankMoveForm);
   const [moveFormError, setMoveFormError] = useState('');
@@ -772,6 +773,9 @@ function App() {
   const editingItem = inventory.find((item) => item.id === editingId) || null;
   const editingUser = users.find((user) => user.id === editingUserId) || null;
   const selectedItem = inventory.find((item) => item.id === selectedId) || null;
+  const moveTargetItem =
+    inventory.find((item) => item.id === moveTargetItemId) ||
+    (qrLocationWarning?.item?.id === moveTargetItemId ? qrLocationWarning.item : null);
   const viewerItem = inventory.find((item) => item.id === viewerId) || null;
   const isMobileFormPage = isMobileViewport && isFormOpen;
   const isMobileDetailsPage = isMobileViewport && !!selectedItem;
@@ -2608,6 +2612,7 @@ function App() {
 
   const handleOpenMoveModal = () => {
     if (!selectedItem) return;
+    setMoveTargetItemId(selectedItem.id);
     setMoveForm({
       place: selectedItem.place || '',
       storageLocation: selectedItem.storageLocation || '',
@@ -2619,6 +2624,7 @@ function App() {
 
   const handleCloseMoveModal = () => {
     setIsMoveModalOpen(false);
+    setMoveTargetItemId('');
     setMoveForm(blankMoveForm);
     setMoveFormError('');
   };
@@ -2628,16 +2634,19 @@ function App() {
   };
 
   const handleMoveArtworkFromQrWarning = () => {
-    if (!selectedItem || !qrLocationWarning?.verification) return;
+    if (!qrLocationWarning?.item?.id || !qrLocationWarning?.verification) return;
+
+    const targetItem = qrLocationWarning.item;
 
     const suggestedPlace =
       qrLocationWarning.verification.nearestLocation?.name ||
-      selectedItem.place ||
+      targetItem.place ||
       '';
 
+    setMoveTargetItemId(targetItem.id);
     setMoveForm({
       place: suggestedPlace,
-      storageLocation: selectedItem.storageLocation || '',
+      storageLocation: targetItem.storageLocation || '',
       note: 'Updated after QR scan location verification.',
     });
     setMoveFormError('');
@@ -2652,15 +2661,15 @@ function App() {
 
   const handleSubmitMoveArtwork = async (event) => {
     event.preventDefault();
-    if (!selectedItem) return;
+    if (!moveTargetItem) return;
 
     setIsInventoryMutating(true);
     setMoveFormError('');
 
     try {
-      const previousPlace = selectedItem.place || '';
-      const previousStorageLocation = selectedItem.storageLocation || '';
-      const response = await fetch(`${API_BASE}/artworks/${selectedItem.id}/move`, {
+      const previousPlace = moveTargetItem.place || '';
+      const previousStorageLocation = moveTargetItem.storageLocation || '';
+      const response = await fetch(`${API_BASE}/artworks/${moveTargetItem.id}/move`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
