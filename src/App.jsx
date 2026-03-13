@@ -3472,11 +3472,7 @@ function App() {
               <button
                 type="button"
                 className="mobile-header-title"
-                onClick={() => {
-                  setCurrentPage('inventory');
-                  setIsMobileMenuOpen(false);
-                  setIsMobileSearchOpen(false);
-                }}
+                onClick={() => window.location.reload()}
               >
                 Artworkz
               </button>
