@@ -1221,6 +1221,12 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, [editingId, isMobileFormPage]);
 
+  useEffect(() => {
+    if (!isMobileMovePage) return;
+
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [isMobileMovePage, moveTargetItemId]);
+
   const fetchUsers = async () => {
     setIsUsersLoading(true);
     try {
@@ -2493,6 +2499,7 @@ function App() {
       currentPage !== 'inventory' ||
       isMobileFormPage ||
       isMobileDetailsPage ||
+      isMobileSearchOpen ||
       !search.trim() ||
       !inventorySectionRef.current
     ) {
@@ -2507,7 +2514,7 @@ function App() {
     }, 120);
 
     return () => window.clearTimeout(timer);
-  }, [search, isMobileViewport, currentPage, isMobileFormPage, isMobileDetailsPage]);
+  }, [search, isMobileViewport, currentPage, isMobileFormPage, isMobileDetailsPage, isMobileSearchOpen]);
 
   const openAddUserModal = () => {
     setEditingUserId('');
@@ -3431,7 +3438,7 @@ function App() {
           ↑
         </button>
       ) : null}
-      {!isMobileFormPage && !isMobileDetailsPage ? (
+      {!isMobileFormPage && !isMobileMovePage && !isMobileDetailsPage ? (
       <header>
         <div className="mobile-header-top">
           <div className="mobile-header-actions">
@@ -3833,6 +3840,78 @@ function App() {
                 locations={locations}
                 submitError={inventoryFormError}
               />
+            </section>
+          </section>
+        ) : isMobileMovePage ? (
+          <section className="mobile-form-page">
+            <div className="mobile-form-page-header">
+              <button type="button" className="mobile-form-back-link" onClick={handleCloseMoveModal} aria-label="Back">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M15 6 9 12l6 6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+                <span>Back</span>
+              </button>
+              <div className="mobile-form-page-heading">
+                <h2>Move Artwork</h2>
+              </div>
+            </div>
+            <section className="panel mobile-form-card">
+              <form className="form-grid" onSubmit={handleSubmitMoveArtwork}>
+                {moveFormError ? <p className="form-error">{moveFormError}</p> : null}
+                <label>
+                  Place
+                  <select name="place" value={moveForm.place} onChange={handleMoveFormChange}>
+                    <option value="">Select place</option>
+                    {Array.from(
+                      new Set([
+                        ...locations.map((location) => String(location?.name || '').trim()).filter(Boolean),
+                        String(moveForm.place || '').trim(),
+                      ])
+                    )
+                      .filter(Boolean)
+                      .sort((left, right) => left.localeCompare(right))
+                      .map((place) => (
+                        <option key={place} value={place}>
+                          {place}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  Storage Location
+                  <input
+                    name="storageLocation"
+                    value={moveForm.storageLocation}
+                    onChange={handleMoveFormChange}
+                    placeholder="Wall / shelf / rack"
+                  />
+                </label>
+                <label className="full-width">
+                  Note
+                  <textarea
+                    name="note"
+                    value={moveForm.note}
+                    onChange={handleMoveFormChange}
+                    rows={3}
+                    placeholder="Reason for transfer"
+                  />
+                </label>
+                <div className="actions full-width">
+                  <button type="submit" disabled={isInventoryMutating}>
+                    {isInventoryMutating ? 'Saving...' : 'Save Movement'}
+                  </button>
+                  <button type="button" className="ghost" onClick={handleCloseMoveModal}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </section>
           </section>
         ) : isMobileDetailsPage ? (
@@ -4572,7 +4651,7 @@ function App() {
         </div>
       ) : null}
 
-      {isMoveModalOpen ? (
+      {isMoveModalOpen && !isMobileMovePage ? (
         <div className="modal-backdrop">
           <section className="panel modal move-artwork-modal" onClick={(event) => event.stopPropagation()}>
             <button type="button" className="modal-close" onClick={handleCloseMoveModal} aria-label="Close">
@@ -4741,7 +4820,7 @@ function App() {
         <UserFormModal editingUser={editingUser} onSubmit={handleSubmitUser} onCancel={closeUserModal} />
       ) : null}
 
-      {!isMobileFormPage && !isMobileDetailsPage ? (
+      {!isMobileFormPage && !isMobileMovePage && !isMobileDetailsPage ? (
         <nav
           className="mobile-bottom-nav"
           aria-label="Mobile navigation"
