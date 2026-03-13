@@ -1,5 +1,6 @@
 import express from 'express';
 import Artwork from '../models/Artwork.js';
+import ArtworkLocationLog from '../models/ArtworkLocationLog.js';
 import { readActorFromRequest, writeAuditLog } from '../utils/audit.js';
 import { deleteArtworkImage, uploadArtworkImage } from '../utils/cloudinary.js';
 import { compareFingerprints, isValidFingerprint } from '../utils/visualSearch.js';
@@ -80,6 +81,24 @@ router.get('/:id', async (req, res) => {
     return res.json(item);
   } catch {
     return res.status(400).json({ message: 'Failed to fetch artwork' });
+  }
+});
+
+router.get('/:id/location-history', async (req, res) => {
+  try {
+    const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
+    const artwork = await Artwork.findById(req.params.id);
+    if (!artwork) {
+      return res.status(404).json({ message: 'Artwork not found' });
+    }
+    if (artwork.isActive === false && actorRole !== 'super admin') {
+      return res.status(404).json({ message: 'Artwork not found' });
+    }
+
+    const logs = await ArtworkLocationLog.find({ artworkId: String(artwork._id) }).sort({ createdAt: -1 });
+    return res.json(logs);
+  } catch {
+    return res.status(400).json({ message: 'Failed to fetch location history.' });
   }
 });
 
@@ -185,6 +204,76 @@ router.put('/:id', async (req, res) => {
     res.json(updated);
   } catch (error) {
     res.status(400).json({ message: error?.message || 'Failed to update artwork' });
+  }
+});
+
+router.post('/:id/move', async (req, res) => {
+  try {
+    const actor = readActorFromRequest(req);
+    const toPlace = String(req.body?.place || '').trim();
+    const toStorageLocation = String(req.body?.storageLocation || '').trim();
+    const note = String(req.body?.note || '').trim();
+
+    if (!toPlace && !toStorageLocation) {
+      return res.status(400).json({ message: 'New place or storage location is required.' });
+    }
+
+    const artwork = await Artwork.findById(req.params.id);
+    if (!artwork) {
+      return res.status(404).json({ message: 'Artwork not found' });
+    }
+
+    const fromPlace = String(artwork.place || '').trim();
+    const fromStorageLocation = String(artwork.storageLocation || '').trim();
+    const nextPlace = toPlace || fromPlace;
+    const nextStorageLocation = toStorageLocation || fromStorageLocation;
+
+    if (nextPlace === fromPlace && nextStorageLocation === fromStorageLocation) {
+      return res.status(400).json({ message: 'Artwork is already in that location.' });
+    }
+
+    artwork.place = nextPlace;
+    artwork.storageLocation = nextStorageLocation;
+    await artwork.save();
+    await ensureInventoryId(artwork);
+
+    await ArtworkLocationLog.create({
+      artworkId: String(artwork._id),
+      inventoryId: artwork.inventoryId || '',
+      title: artwork.title || '',
+      artist: artwork.artist || '',
+      fromPlace,
+      fromStorageLocation,
+      toPlace: nextPlace,
+      toStorageLocation: nextStorageLocation,
+      note,
+      actor: {
+        id: actor.id || '',
+        email: actor.email || '',
+        role: actor.role || '',
+      },
+    });
+
+    await writeAuditLog({
+      action: 'inventory.move',
+      actor,
+      target: {
+        type: 'artwork',
+        id: String(artwork._id),
+        label: artwork.title || artwork.inventoryId || '',
+      },
+      metadata: {
+        fromPlace,
+        fromStorageLocation,
+        toPlace: nextPlace,
+        toStorageLocation: nextStorageLocation,
+        note,
+      },
+    });
+
+    return res.json(artwork);
+  } catch (error) {
+    return res.status(400).json({ message: error?.message || 'Failed to move artwork.' });
   }
 });
 

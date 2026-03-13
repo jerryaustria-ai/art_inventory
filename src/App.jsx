@@ -142,6 +142,12 @@ const blankUserForm = {
   status: 'active',
 };
 
+const blankMoveForm = {
+  place: '',
+  storageLocation: '',
+  note: '',
+};
+
 function formatDateTime(value) {
   if (!value) return 'N/A';
   const parsed = new Date(value);
@@ -676,6 +682,11 @@ function App() {
   const [returnDetailsId, setReturnDetailsId] = useState('');
   const [viewerReturnId, setViewerReturnId] = useState('');
   const [detailsQr, setDetailsQr] = useState('');
+  const [locationHistory, setLocationHistory] = useState([]);
+  const [isLocationHistoryLoading, setIsLocationHistoryLoading] = useState(false);
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+  const [moveForm, setMoveForm] = useState(blankMoveForm);
+  const [moveFormError, setMoveFormError] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [isTotalsOpen, setIsTotalsOpen] = useState(false);
@@ -782,6 +793,19 @@ function App() {
     return normalizeArtwork(data);
   };
 
+  const fetchLocationHistory = async (itemId, activeSession = session) => {
+    const response = await fetch(`${API_BASE}/artworks/${itemId}/location-history`, {
+      headers: {
+        'x-actor-role': activeSession?.role || '',
+      },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch location history');
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  };
+
   const saveArtworkFingerprint = async (itemId, imageFingerprint) => {
     const response = await fetch(`${API_BASE}/artworks/${itemId}/fingerprint`, {
       method: 'PATCH',
@@ -848,6 +872,38 @@ function App() {
       isActive = false;
     };
   }, [selectedItem]);
+
+  useEffect(() => {
+    if (!selectedItem?.id) {
+      setLocationHistory([]);
+      setIsLocationHistoryLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    setIsLocationHistoryLoading(true);
+
+    fetchLocationHistory(selectedItem.id, session)
+      .then((logs) => {
+        if (isActive) {
+          setLocationHistory(logs);
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setLocationHistory([]);
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLocationHistoryLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedItem?.id, session]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -1814,6 +1870,9 @@ function App() {
   const handleCloseSelectedItem = () => {
     setSelectedId('');
     setViewerReturnId('');
+    setIsMoveModalOpen(false);
+    setMoveForm(blankMoveForm);
+    setMoveFormError('');
   };
 
   const toggleExpandedCard = (id) => {
@@ -2242,6 +2301,86 @@ function App() {
     setSelectedId('');
   };
 
+  const handleOpenMoveModal = () => {
+    if (!selectedItem) return;
+    setMoveForm({
+      place: selectedItem.place || '',
+      storageLocation: selectedItem.storageLocation || '',
+      note: '',
+    });
+    setMoveFormError('');
+    setIsMoveModalOpen(true);
+  };
+
+  const handleCloseMoveModal = () => {
+    setIsMoveModalOpen(false);
+    setMoveForm(blankMoveForm);
+    setMoveFormError('');
+  };
+
+  const handleMoveFormChange = (event) => {
+    const { name, value } = event.target;
+    setMoveForm((previous) => ({ ...previous, [name]: value }));
+  };
+
+  const handleSubmitMoveArtwork = async (event) => {
+    event.preventDefault();
+    if (!selectedItem) return;
+
+    setIsInventoryMutating(true);
+    setMoveFormError('');
+
+    try {
+      const previousPlace = selectedItem.place || '';
+      const previousStorageLocation = selectedItem.storageLocation || '';
+      const response = await fetch(`${API_BASE}/artworks/${selectedItem.id}/move`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-actor-id': session?.id || '',
+          'x-actor-email': session?.email || '',
+          'x-actor-role': session?.role || '',
+        },
+        body: JSON.stringify(moveForm),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || 'Failed to move artwork.');
+      }
+
+      const updatedItem = normalizeArtwork(await response.json());
+      setInventory((previous) => previous.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
+      setSelectedId(updatedItem.id);
+      setLocationHistory((previous) => [
+        {
+          _id: `temp-${Date.now()}`,
+          artworkId: updatedItem.id,
+          inventoryId: updatedItem.inventoryId || '',
+          title: updatedItem.title || '',
+          artist: updatedItem.artist || '',
+          fromPlace: previousPlace,
+          fromStorageLocation: previousStorageLocation,
+          toPlace: updatedItem.place || '',
+          toStorageLocation: updatedItem.storageLocation || '',
+          note: moveForm.note || '',
+          actor: {
+            id: session?.id || '',
+            email: session?.email || '',
+            role: session?.role || '',
+          },
+          createdAt: new Date().toISOString(),
+        },
+        ...previous,
+      ]);
+      handleCloseMoveModal();
+    } catch (error) {
+      setMoveFormError(error.message || 'Failed to move artwork.');
+    } finally {
+      setIsInventoryMutating(false);
+    }
+  };
+
   const selectedItemDetailsContent = selectedItem ? (
     <>
       <h2>{getArtworkTitle(selectedItem.title)}</h2>
@@ -2308,6 +2447,43 @@ function App() {
           </div>
         </div>
       </div>
+      <section className="location-history-section">
+        <div className="heading-row">
+          <h3>Location History</h3>
+          {canManage ? (
+            <button type="button" onClick={handleOpenMoveModal}>
+              Move Artwork
+            </button>
+          ) : null}
+        </div>
+        {isLocationHistoryLoading ? <p className="muted">Loading location history...</p> : null}
+        {!isLocationHistoryLoading && locationHistory.length === 0 ? (
+          <p className="muted">No location history yet.</p>
+        ) : null}
+        {locationHistory.length ? (
+          <div className="location-history-list">
+            {locationHistory.map((entry) => (
+              <article className="location-history-item" key={entry._id}>
+                <strong>{formatDateTime(entry.createdAt)}</strong>
+                <p>
+                  <strong>From:</strong> {entry.fromPlace || 'Not set'} / {entry.fromStorageLocation || 'Not set'}
+                </p>
+                <p>
+                  <strong>To:</strong> {entry.toPlace || 'Not set'} / {entry.toStorageLocation || 'Not set'}
+                </p>
+                <p>
+                  <strong>By:</strong> {entry.actor?.email || entry.actor?.role || 'Unknown'}
+                </p>
+                {entry.note ? (
+                  <p>
+                    <strong>Note:</strong> {entry.note}
+                  </p>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </section>
       <div className="actions">
         {canManage ? (
           <>
@@ -2315,6 +2491,9 @@ function App() {
               <>
                 <button type="button" onClick={handleEditSelectedItem}>
                   Edit
+                </button>
+                <button type="button" onClick={handleOpenMoveModal}>
+                  Move
                 </button>
                 <button type="button" className="danger" onClick={() => handleDelete(selectedItem.id)}>
                   Delete
@@ -3767,6 +3946,52 @@ function App() {
             handleImagePointerUp={handleImagePointerUp}
           />
         </Suspense>
+      ) : null}
+
+      {isMoveModalOpen ? (
+        <div className="modal-backdrop">
+          <section className="panel modal move-artwork-modal" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="modal-close" onClick={handleCloseMoveModal} aria-label="Close">
+              ×
+            </button>
+            <h2>Move Artwork</h2>
+            <p className="muted">Update the current artwork location and keep a movement history.</p>
+            <form className="form-grid" onSubmit={handleSubmitMoveArtwork}>
+              {moveFormError ? <p className="form-error">{moveFormError}</p> : null}
+              <label>
+                Place
+                <input name="place" value={moveForm.place} onChange={handleMoveFormChange} placeholder="Gallery / branch / room" />
+              </label>
+              <label>
+                Storage Location
+                <input
+                  name="storageLocation"
+                  value={moveForm.storageLocation}
+                  onChange={handleMoveFormChange}
+                  placeholder="Wall / shelf / rack"
+                />
+              </label>
+              <label className="full-width">
+                Note
+                <textarea
+                  name="note"
+                  value={moveForm.note}
+                  onChange={handleMoveFormChange}
+                  rows={3}
+                  placeholder="Reason for transfer"
+                />
+              </label>
+              <div className="actions full-width">
+                <button type="submit" disabled={isInventoryMutating}>
+                  {isInventoryMutating ? 'Saving...' : 'Save Movement'}
+                </button>
+                <button type="button" className="ghost" onClick={handleCloseMoveModal}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
       ) : null}
 
       {isQrScannerOpen ? (

@@ -1165,6 +1165,30 @@ button.danger {
   margin-bottom: 0.75rem;
 }
 
+.location-history-section {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.location-history-section h3 {
+  margin: 0;
+}
+
+.location-history-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.location-history-item {
+  border: 1px solid #d8e0e1;
+  border-radius: 12px;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.28rem;
+  background: #f8fbfb;
+}
+
 .qr-block {
   min-width: 190px;
 }
@@ -1201,6 +1225,10 @@ button.danger {
   width: min(520px, 100%);
   display: grid;
   gap: 0.75rem;
+}
+
+.move-artwork-modal {
+  width: min(560px, 100%);
 }
 
 .visual-search-modal {
