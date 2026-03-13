@@ -1025,6 +1025,42 @@ function App() {
   }, [session]);
 
   useEffect(() => {
+    if (!session) return undefined;
+    if (currentPage !== 'inventory') return undefined;
+    if (isLoading || isInventoryMutating || isInventoryImporting) return undefined;
+    if (isQrScannerOpen || isVisualSearchOpen) return undefined;
+
+    let isActive = true;
+
+    const refreshInventoryInBackground = async () => {
+      try {
+        const refreshedInventory = await fetchInventory(session);
+        if (!isActive) return;
+        setInventory(refreshedInventory);
+      } catch {
+        // Keep background refresh silent so the UI does not flash errors while the user is browsing.
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void refreshInventoryInBackground();
+    }, 15000);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    currentPage,
+    isInventoryImporting,
+    isInventoryMutating,
+    isLoading,
+    isQrScannerOpen,
+    isVisualSearchOpen,
+    session,
+  ]);
+
+  useEffect(() => {
     setGpsVerificationResult(null);
   }, [selectedItem?.id]);
 
