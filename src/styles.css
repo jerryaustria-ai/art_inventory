@@ -1232,6 +1232,18 @@ button.danger {
   gap: 0.4rem;
 }
 
+.gps-verify-message {
+  font-weight: 600;
+}
+
+.gps-verify-match {
+  color: #1d6f42;
+}
+
+.gps-verify-mismatch {
+  color: #b42318;
+}
+
 .qr-block {
   min-width: 190px;
 }
@@ -1272,6 +1284,10 @@ button.danger {
 
 .move-artwork-modal {
   width: min(560px, 100%);
+}
+
+.location-history-modal {
+  width: min(720px, 100%);
 }
 
 .qr-location-warning-modal {

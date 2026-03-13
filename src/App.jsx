@@ -759,6 +759,7 @@ function App() {
   const [detailsQr, setDetailsQr] = useState('');
   const [locationHistory, setLocationHistory] = useState([]);
   const [isLocationHistoryLoading, setIsLocationHistoryLoading] = useState(false);
+  const [locationHistoryItemId, setLocationHistoryItemId] = useState('');
   const [gpsVerificationResult, setGpsVerificationResult] = useState(null);
   const [isGpsVerifying, setIsGpsVerifying] = useState(false);
   const [shouldCheckGpsAfterQrScan, setShouldCheckGpsAfterQrScan] = useState(false);
@@ -820,13 +821,18 @@ function App() {
   const editingItem = inventory.find((item) => item.id === editingId) || null;
   const editingUser = users.find((user) => user.id === editingUserId) || null;
   const selectedItem = inventory.find((item) => item.id === selectedId) || null;
+  const locationHistoryItem =
+    inventory.find((item) => item.id === locationHistoryItemId) ||
+    (selectedItem?.id === locationHistoryItemId ? selectedItem : null);
   const moveTargetItem =
     inventory.find((item) => item.id === moveTargetItemId) ||
     (qrLocationWarning?.item?.id === moveTargetItemId ? qrLocationWarning.item : null);
   const viewerItem = inventory.find((item) => item.id === viewerId) || null;
   const isMobileFormPage = isMobileViewport && isFormOpen;
   const isMobileMovePage = isMobileViewport && isMoveModalOpen;
+  const isMobileLocationHistoryPage = isMobileViewport && !!locationHistoryItemId;
   const isMobileDetailsPage = isMobileViewport && !!selectedItem;
+  const activeLocationHistoryItemId = locationHistoryItemId || selectedItem?.id || '';
   const categoryOptions = useMemo(() => {
     const values = new Set([
       ...categories.map((item) => item.name).filter(Boolean),
@@ -959,7 +965,7 @@ function App() {
   }, [selectedItem]);
 
   useEffect(() => {
-    if (!selectedItem?.id) {
+    if (!activeLocationHistoryItemId) {
       setLocationHistory([]);
       setIsLocationHistoryLoading(false);
       return;
@@ -968,7 +974,7 @@ function App() {
     let isActive = true;
     setIsLocationHistoryLoading(true);
 
-    fetchLocationHistory(selectedItem.id, session)
+    fetchLocationHistory(activeLocationHistoryItemId, session)
       .then((logs) => {
         if (isActive) {
           setLocationHistory(logs);
@@ -988,7 +994,7 @@ function App() {
     return () => {
       isActive = false;
     };
-  }, [selectedItem?.id, session]);
+  }, [activeLocationHistoryItemId, session]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -2313,6 +2319,15 @@ function App() {
     inventoryScrollRestoreRef.current = null;
   };
 
+  const handleOpenLocationHistory = () => {
+    if (!selectedItem?.id) return;
+    setLocationHistoryItemId(selectedItem.id);
+  };
+
+  const handleCloseLocationHistory = () => {
+    setLocationHistoryItemId('');
+  };
+
   const toggleExpandedCard = (id) => {
     setExpandedCardIds((previous) =>
       previous.includes(id) ? previous.filter((itemId) => itemId !== id) : [...previous, id]
@@ -2901,7 +2916,15 @@ function App() {
             <strong>Storage Location:</strong> {selectedItem.storageLocation || 'Not set'}
           </p>
           <div className="gps-verify-block">
-            <p>
+            <p
+              className={
+                gpsVerificationResult?.status === 'match'
+                  ? 'gps-verify-message gps-verify-match'
+                  : gpsVerificationResult?.status === 'mismatch'
+                    ? 'gps-verify-message gps-verify-mismatch'
+                    : ''
+              }
+            >
               <strong>GPS Verification:</strong>{' '}
               {gpsVerificationResult ? gpsVerificationResult.message : 'Not checked yet'}
             </p>
@@ -2934,38 +2957,15 @@ function App() {
           </div>
         </div>
       </div>
-      <section className="location-history-section">
-        <div className="heading-row">
-          <h3>Location History</h3>
-        </div>
-        {isLocationHistoryLoading ? <p className="muted">Loading location history...</p> : null}
-        {!isLocationHistoryLoading && locationHistory.length === 0 ? (
-          <p className="muted">No location history yet.</p>
-        ) : null}
-        {locationHistory.length ? (
-          <div className="location-history-list">
-            {locationHistory.map((entry) => (
-              <article className="location-history-item" key={entry._id}>
-                <strong>{formatDateTime(entry.createdAt)}</strong>
-                <p>
-                  <strong>From:</strong> {entry.fromPlace || 'Not set'} / {entry.fromStorageLocation || 'Not set'}
-                </p>
-                <p>
-                  <strong>To:</strong> {entry.toPlace || 'Not set'} / {entry.toStorageLocation || 'Not set'}
-                </p>
-                <p>
-                  <strong>By:</strong> {entry.actor?.email || entry.actor?.role || 'Unknown'}
-                </p>
-                {entry.note ? (
-                  <p>
-                    <strong>Note:</strong> {entry.note}
-                  </p>
-                ) : null}
-              </article>
-            ))}
+      {locationHistory.length ? (
+        <section className="location-history-section">
+          <div className="heading-row">
+            <button type="button" className="title-btn" onClick={handleOpenLocationHistory}>
+              Location History
+            </button>
           </div>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
       <div className="actions">
         {canManage ? (
           <>
@@ -2999,6 +2999,40 @@ function App() {
         </button>
       </div>
     </>
+  ) : null;
+
+  const locationHistoryContent = locationHistoryItem ? (
+    <section className="location-history-section">
+      <h2>{getArtworkTitle(locationHistoryItem.title)}</h2>
+      <p className="totals-subtitle">{getArtworkArtist(locationHistoryItem.artist)}</p>
+      {isLocationHistoryLoading ? <p className="muted">Loading location history...</p> : null}
+      {!isLocationHistoryLoading && locationHistory.length === 0 ? (
+        <p className="muted">No location history yet.</p>
+      ) : null}
+      {locationHistory.length ? (
+        <div className="location-history-list">
+          {locationHistory.map((entry) => (
+            <article className="location-history-item" key={entry._id}>
+              <strong>{formatDateTime(entry.createdAt)}</strong>
+              <p>
+                <strong>From:</strong> {entry.fromPlace || 'Not set'} / {entry.fromStorageLocation || 'Not set'}
+              </p>
+              <p>
+                <strong>To:</strong> {entry.toPlace || 'Not set'} / {entry.toStorageLocation || 'Not set'}
+              </p>
+              <p>
+                <strong>By:</strong> {entry.actor?.email || entry.actor?.role || 'Unknown'}
+              </p>
+              {entry.note ? (
+                <p>
+                  <strong>Note:</strong> {entry.note}
+                </p>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
   ) : null;
 
   const categorySectionContent = (
@@ -3443,7 +3477,7 @@ function App() {
           ↑
         </button>
       ) : null}
-      {!isMobileFormPage && !isMobileMovePage && !isMobileDetailsPage ? (
+      {!isMobileFormPage && !isMobileMovePage && !isMobileLocationHistoryPage && !isMobileDetailsPage ? (
       <header>
         <div className="mobile-header-top">
           <div className="mobile-header-actions">
@@ -3914,6 +3948,28 @@ function App() {
                 </div>
               </form>
             </section>
+          </section>
+        ) : isMobileLocationHistoryPage ? (
+          <section className="mobile-form-page">
+            <div className="mobile-form-page-header">
+              <button type="button" className="mobile-form-back-link" onClick={handleCloseLocationHistory} aria-label="Back">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M15 6 9 12l6 6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+                <span>Back</span>
+              </button>
+              <div className="mobile-form-page-heading">
+                <h2>Location History</h2>
+              </div>
+            </div>
+            <section className="panel mobile-form-card">{locationHistoryContent}</section>
           </section>
         ) : isMobileDetailsPage ? (
           <section className="panel mobile-details-page">
@@ -4573,13 +4629,24 @@ function App() {
         </div>
       ) : null}
 
-      {selectedItem && !isMobileDetailsPage ? (
+      {selectedItem && !isMobileDetailsPage && !locationHistoryItemId ? (
         <div className="modal-backdrop">
           <section className="panel modal details-modal" onClick={(event) => event.stopPropagation()}>
             <button type="button" className="modal-close" onClick={() => setSelectedId('')} aria-label="Close">
               ×
             </button>
             {selectedItemDetailsContent}
+          </section>
+        </div>
+      ) : null}
+
+      {locationHistoryItemId && !isMobileLocationHistoryPage ? (
+        <div className="modal-backdrop">
+          <section className="panel modal location-history-modal" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="modal-close" onClick={handleCloseLocationHistory} aria-label="Close">
+              ×
+            </button>
+            {locationHistoryContent}
           </section>
         </div>
       ) : null}
@@ -4821,7 +4888,7 @@ function App() {
         <UserFormModal editingUser={editingUser} onSubmit={handleSubmitUser} onCancel={closeUserModal} />
       ) : null}
 
-      {!isMobileFormPage && !isMobileMovePage && !isMobileDetailsPage ? (
+      {!isMobileFormPage && !isMobileMovePage && !isMobileLocationHistoryPage && !isMobileDetailsPage ? (
         <nav
           className="mobile-bottom-nav"
           aria-label="Mobile navigation"
