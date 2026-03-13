@@ -4833,25 +4833,6 @@ function App() {
             gridTemplateColumns: `repeat(${canOpenAdminPage ? 4 : 3}, minmax(0, 1fr))`,
           }}
         >
-          <button
-            type="button"
-            className={currentPage === 'inventory' ? 'active' : ''}
-            onClick={() => window.location.reload()}
-          >
-            <span className="mobile-bottom-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path
-                  d="M20 12a8 8 0 1 1-2.34-5.66M20 4v6h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            <span>Refresh</span>
-          </button>
           {canOpenAdminPage ? (
             <button
               type="button"
@@ -4870,6 +4851,25 @@ function App() {
           <button type="button" onClick={handleAddNew}>
             <span className="mobile-bottom-icon">+</span>
             <span>Add Item</span>
+          </button>
+          <button
+            type="button"
+            className={isVisualSearchOpen ? 'active' : ''}
+            onClick={openVisualSearch}
+          >
+            <span className="mobile-bottom-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="m21 21-4.35-4.35M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <span>Visual Search</span>
           </button>
           <button
             type="button"
