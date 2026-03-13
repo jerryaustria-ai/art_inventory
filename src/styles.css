@@ -60,20 +60,10 @@ body {
   z-index: 120;
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 0.75rem;
   background: rgba(0, 0, 0, 0.88);
   backdrop-filter: blur(6px);
-}
-
-.loading-overlay-card {
-  min-width: 220px;
-  padding: 1rem 1.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.82);
-  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.3);
-  display: grid;
-  justify-items: center;
-  gap: 0.75rem;
-  color: #ffffff;
 }
 
 .loading-logo {
@@ -84,6 +74,10 @@ body {
   filter: drop-shadow(0 14px 24px rgba(16, 32, 36, 0.18));
   animation: loadingSpin 3.4s linear infinite;
   transform-origin: center center;
+}
+
+.loading-text {
+  color: #ffffff;
 }
 
 @keyframes loadingSpin {
@@ -1085,6 +1079,7 @@ button.danger {
   height: 220px;
 }
 
+.item-status-badge,
 .inactive-badge {
   position: absolute;
   top: 0.65rem;
@@ -1095,6 +1090,21 @@ button.danger {
   font-size: 0.78rem;
   font-weight: 700;
   background: rgba(180, 35, 24, 0.92);
+  color: #ffffff;
+}
+
+.status-badge-sold {
+  background: rgba(180, 35, 24, 0.92);
+  color: #ffffff;
+}
+
+.status-badge-reserved {
+  background: rgba(180, 120, 24, 0.92);
+  color: #ffffff;
+}
+
+.status-badge-loan {
+  background: rgba(37, 99, 235, 0.92);
   color: #ffffff;
 }
 

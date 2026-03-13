@@ -283,6 +283,37 @@ function getCategoryStatIcon(category) {
   );
 }
 
+function getArtworkStatusBadge(status, isActive) {
+  if (isActive === false) {
+    return {
+      label: 'Inactive',
+      className: 'item-status-badge inactive-badge',
+    };
+  }
+
+  const normalizedStatus = String(status || '').trim().toLowerCase();
+  if (normalizedStatus === 'sold') {
+    return {
+      label: 'Sold',
+      className: 'item-status-badge status-badge-sold',
+    };
+  }
+  if (normalizedStatus === 'reserved') {
+    return {
+      label: 'Reserved',
+      className: 'item-status-badge status-badge-reserved',
+    };
+  }
+  if (normalizedStatus === 'on loan') {
+    return {
+      label: 'On Loan',
+      className: 'item-status-badge status-badge-loan',
+    };
+  }
+
+  return null;
+}
+
 function InventoryForm({
   onSubmit,
   editingItem,
@@ -2162,9 +2193,13 @@ function App() {
     () =>
       categoryOptions.map((category) => {
         const items = inventory.filter((item) => item.category === category);
+        const activeCount = items.filter((item) => item.isActive !== false).length;
+        const inactiveCount = items.length - activeCount;
         return {
           name: category,
           count: items.length,
+          activeCount,
+          inactiveCount,
           value: items.reduce((sum, item) => sum + Number(item.price || 0), 0),
         };
       }).filter((category) => category.count > 0),
@@ -3374,10 +3409,8 @@ function App() {
     <main className="container">
       {isOverlayLoading ? (
         <div className="loading-overlay" role="status" aria-live="polite" aria-busy="true">
-          <div className="loading-overlay-card">
-            <img src="/januarius-loading-logo.png" alt="" className="loading-logo" aria-hidden="true" />
-            <strong>Loading...</strong>
-          </div>
+          <img src="/januarius-loading-logo.png" alt="" className="loading-logo" aria-hidden="true" />
+          <strong className="loading-text">Loading...</strong>
         </div>
       ) : null}
       {showScrollTop ? (
@@ -3847,7 +3880,11 @@ function App() {
             </span>
             <span>{categoryStat.name}</span>
             <strong>{categoryStat.count.toLocaleString()}</strong>
-            <small className="stat-subvalue">Est. {formatPhp(categoryStat.value)}</small>
+            <small className="stat-subvalue">
+              {session?.role === 'super admin'
+                ? `Active ${categoryStat.activeCount.toLocaleString()} • Inactive ${categoryStat.inactiveCount.toLocaleString()}`
+                : `Est. ${formatPhp(categoryStat.value)}`}
+            </small>
           </button>
         ))}
       </section>
@@ -4002,6 +4039,7 @@ function App() {
             >
               {(() => {
                 const isExpanded = expandedCardIds.includes(item.id);
+                const statusBadge = getArtworkStatusBadge(item.status, item.isActive);
                 return (
                   <>
               <button
@@ -4015,7 +4053,7 @@ function App() {
                   <div className="placeholder">No Image</div>
                 )}
               </button>
-              {!item.isActive ? <span className="inactive-badge">Inactive</span> : null}
+              {statusBadge ? <span className={statusBadge.className}>{statusBadge.label}</span> : null}
               {displayMode === 'details' ? (
                 <div className="card-body">
                   <h3>
