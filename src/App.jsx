@@ -825,6 +825,7 @@ function App() {
     (qrLocationWarning?.item?.id === moveTargetItemId ? qrLocationWarning.item : null);
   const viewerItem = inventory.find((item) => item.id === viewerId) || null;
   const isMobileFormPage = isMobileViewport && isFormOpen;
+  const isMobileMovePage = isMobileViewport && isMoveModalOpen;
   const isMobileDetailsPage = isMobileViewport && !!selectedItem;
   const categoryOptions = useMemo(() => {
     const values = new Set([
@@ -2732,16 +2733,22 @@ function App() {
     setSelectedId('');
   };
 
-  const handleOpenMoveModal = () => {
-    if (!selectedItem) return;
-    setMoveTargetItemId(selectedItem.id);
+  const openMoveModalForItem = (item) => {
+    if (!item?.id) return;
+
+    setMoveTargetItemId(item.id);
     setMoveForm({
-      place: selectedItem.place || '',
-      storageLocation: selectedItem.storageLocation || '',
+      place: item.place || '',
+      storageLocation: item.storageLocation || '',
       note: '',
     });
     setMoveFormError('');
     setIsMoveModalOpen(true);
+  };
+
+  const handleOpenMoveModal = () => {
+    if (!selectedItem) return;
+    openMoveModalForItem(selectedItem);
   };
 
   const handleCloseMoveModal = () => {
@@ -2765,14 +2772,15 @@ function App() {
       targetItem.place ||
       '';
 
-    setMoveTargetItemId(targetItem.id);
-    setMoveForm({
+    openMoveModalForItem({
+      ...targetItem,
       place: suggestedPlace,
       storageLocation: targetItem.storageLocation || '',
-      note: 'Updated after QR scan location verification.',
     });
-    setMoveFormError('');
-    setIsMoveModalOpen(true);
+    setMoveForm((previous) => ({
+      ...previous,
+      note: 'Updated after QR scan location verification.',
+    }));
     setQrLocationWarning(null);
   };
 
