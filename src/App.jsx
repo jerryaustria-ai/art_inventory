@@ -715,6 +715,8 @@ function App() {
   const [isLocationHistoryLoading, setIsLocationHistoryLoading] = useState(false);
   const [gpsVerificationResult, setGpsVerificationResult] = useState(null);
   const [isGpsVerifying, setIsGpsVerifying] = useState(false);
+  const [shouldCheckGpsAfterQrScan, setShouldCheckGpsAfterQrScan] = useState(false);
+  const [qrLocationWarning, setQrLocationWarning] = useState(null);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [moveForm, setMoveForm] = useState(blankMoveForm);
   const [moveFormError, setMoveFormError] = useState('');
@@ -1003,6 +1005,47 @@ function App() {
   useEffect(() => {
     setGpsVerificationResult(null);
   }, [selectedItem?.id]);
+
+  useEffect(() => {
+    if (!selectedItem?.id || !shouldCheckGpsAfterQrScan) return;
+    if (isLocationsLoading) return;
+
+    let isActive = true;
+    setIsGpsVerifying(true);
+    setGpsVerificationResult(null);
+    setQrLocationWarning(null);
+
+    const verifyAfterScan = async () => {
+      try {
+        const verificationResult = await verifyArtworkGpsLocation(selectedItem);
+        if (!isActive) return;
+        setGpsVerificationResult(verificationResult);
+
+        if (verificationResult.status === 'mismatch') {
+          setQrLocationWarning({
+            item: selectedItem,
+            verification: verificationResult,
+          });
+        }
+      } catch (error) {
+        if (!isActive) return;
+        setGpsVerificationResult({
+          status: 'error',
+          message: error?.message || 'Unable to get device GPS location.',
+        });
+      } finally {
+        if (!isActive) return;
+        setIsGpsVerifying(false);
+        setShouldCheckGpsAfterQrScan(false);
+      }
+    };
+
+    void verifyAfterScan();
+
+    return () => {
+      isActive = false;
+    };
+  }, [isLocationsLoading, locations, selectedItem, shouldCheckGpsAfterQrScan]);
 
   useEffect(() => {
     updateItemIdInUrl(selectedId);
@@ -1709,62 +1752,101 @@ function App() {
     }
   };
 
-  const handleVerifyGpsLocation = async () => {
-    if (!selectedItem) return;
-    const expectedLocation = locations.find(
-      (location) => location.name.trim().toLowerCase() === String(selectedItem.place || '').trim().toLowerCase()
-    );
+  const findExpectedLocationForArtwork = (artwork) =>
+    locations.find((location) => location.name.trim().toLowerCase() === String(artwork?.place || '').trim().toLowerCase()) || null;
 
+  const findNearestLocation = (coords) => {
+    if (!coords || !locations.length) return null;
+
+    let nearest = null;
+    for (const location of locations) {
+      const distanceMeters = getDistanceInMeters(
+        {
+          latitude: location.latitude,
+          longitude: location.longitude,
+        },
+        coords
+      );
+      if (!nearest || distanceMeters < nearest.distanceMeters) {
+        nearest = {
+          ...location,
+          distanceMeters,
+        };
+      }
+    }
+
+    return nearest;
+  };
+
+  const verifyArtworkGpsLocation = async (artwork) => {
+    if (!artwork) {
+      return {
+        status: 'error',
+        message: 'No artwork selected.',
+      };
+    }
+
+    const expectedLocation = findExpectedLocationForArtwork(artwork);
     if (!expectedLocation) {
-      setGpsVerificationResult({
+      return {
         status: 'missing',
         message: 'No GPS master location is mapped to this artwork place yet.',
-      });
-      return;
+      };
     }
 
     if (!navigator?.geolocation) {
-      setGpsVerificationResult({
+      return {
         status: 'error',
         message: 'Geolocation is not supported on this device.',
-      });
-      return;
+      };
     }
+
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 10000,
+      });
+    });
+
+    const actualCoords = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+    };
+
+    const distanceMeters = getDistanceInMeters(
+      {
+        latitude: expectedLocation.latitude,
+        longitude: expectedLocation.longitude,
+      },
+      actualCoords
+    );
+
+    const radiusMeters = Number(expectedLocation.radiusMeters || 50);
+    const isMatch = distanceMeters <= radiusMeters;
+    const nearestLocation = findNearestLocation(actualCoords);
+
+    return {
+      status: isMatch ? 'match' : 'mismatch',
+      message: isMatch
+        ? `Location verified. Device is within ${Math.round(distanceMeters)}m of ${expectedLocation.name}.`
+        : `Location mismatch. Device is about ${Math.round(distanceMeters)}m away from ${expectedLocation.name}.`,
+      distanceMeters,
+      expectedLocation,
+      nearestLocation,
+      actualCoords,
+    };
+  };
+
+  const handleVerifyGpsLocation = async () => {
+    if (!selectedItem) return;
 
     setIsGpsVerifying(true);
     setGpsVerificationResult(null);
 
     try {
-      const coords = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 10000,
-        });
-      });
-
-      const distanceMeters = getDistanceInMeters(
-        {
-          latitude: expectedLocation.latitude,
-          longitude: expectedLocation.longitude,
-        },
-        {
-          latitude: coords.coords.latitude,
-          longitude: coords.coords.longitude,
-        }
-      );
-
-      const radiusMeters = Number(expectedLocation.radiusMeters || 50);
-      const isMatch = distanceMeters <= radiusMeters;
-
-      setGpsVerificationResult({
-        status: isMatch ? 'match' : 'mismatch',
-        message: isMatch
-          ? `Location verified. Device is within ${Math.round(distanceMeters)}m of ${expectedLocation.name}.`
-          : `Location mismatch. Device is about ${Math.round(distanceMeters)}m away from ${expectedLocation.name}.`,
-        distanceMeters,
-        expectedLocation,
-      });
+      const verificationResult = await verifyArtworkGpsLocation(selectedItem);
+      setGpsVerificationResult(verificationResult);
     } catch (error) {
       setGpsVerificationResult({
         status: 'error',
@@ -2541,6 +2623,28 @@ function App() {
     setMoveFormError('');
   };
 
+  const handleDismissQrLocationWarning = () => {
+    setQrLocationWarning(null);
+  };
+
+  const handleMoveArtworkFromQrWarning = () => {
+    if (!selectedItem || !qrLocationWarning?.verification) return;
+
+    const suggestedPlace =
+      qrLocationWarning.verification.nearestLocation?.name ||
+      selectedItem.place ||
+      '';
+
+    setMoveForm({
+      place: suggestedPlace,
+      storageLocation: selectedItem.storageLocation || '',
+      note: 'Updated after QR scan location verification.',
+    });
+    setMoveFormError('');
+    setIsMoveModalOpen(true);
+    setQrLocationWarning(null);
+  };
+
   const handleMoveFormChange = (event) => {
     const { name, value } = event.target;
     setMoveForm((previous) => ({ ...previous, [name]: value }));
@@ -3005,6 +3109,8 @@ function App() {
     setCurrentPage('inventory');
     setSelectedId('');
     setPendingItemId(itemId);
+    setShouldCheckGpsAfterQrScan(true);
+    setQrLocationWarning(null);
     updateItemIdInUrl(itemId);
     setIsMobileMenuOpen(false);
     setIsQrScannerOpen(false);
@@ -4271,6 +4377,49 @@ function App() {
             handleImagePointerUp={handleImagePointerUp}
           />
         </Suspense>
+      ) : null}
+
+      {qrLocationWarning ? (
+        <div className="modal-backdrop" onClick={handleDismissQrLocationWarning}>
+          <section className="panel modal qr-location-warning-modal" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="modal-close" onClick={handleDismissQrLocationWarning} aria-label="Close">
+              ×
+            </button>
+            <h2>Place Warning</h2>
+            <p className="muted">
+              After scanning this QR, the device GPS does not match the artwork&apos;s expected place in the database.
+            </p>
+            <div className="qr-location-warning-details">
+              <p>
+                <strong>Artwork:</strong> {getArtworkTitle(qrLocationWarning.item?.title)}
+              </p>
+              <p>
+                <strong>Database Place:</strong> {qrLocationWarning.item?.place || 'Not set'}
+              </p>
+              <p>
+                <strong>GPS Result:</strong> {qrLocationWarning.verification?.message}
+              </p>
+              <p>
+                <strong>Nearest Known Location:</strong>{' '}
+                {qrLocationWarning.verification?.nearestLocation
+                  ? `${qrLocationWarning.verification.nearestLocation.name} (${Math.round(
+                      qrLocationWarning.verification.nearestLocation.distanceMeters
+                    )}m away)`
+                  : 'No nearby saved location found'}
+              </p>
+            </div>
+            <div className="actions">
+              <button type="button" onClick={handleMoveArtworkFromQrWarning}>
+                {qrLocationWarning.verification?.nearestLocation
+                  ? `Move to ${qrLocationWarning.verification.nearestLocation.name}`
+                  : 'Move Artwork'}
+              </button>
+              <button type="button" className="ghost" onClick={handleDismissQrLocationWarning}>
+                Keep Current Place
+              </button>
+            </div>
+          </section>
+        </div>
       ) : null}
 
       {isMoveModalOpen ? (
