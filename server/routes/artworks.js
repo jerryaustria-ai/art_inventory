@@ -2,6 +2,7 @@ import express from 'express';
 import Artwork from '../models/Artwork.js';
 import { readActorFromRequest, writeAuditLog } from '../utils/audit.js';
 import { deleteArtworkImage, uploadArtworkImage } from '../utils/cloudinary.js';
+import { compareFingerprints, isValidFingerprint } from '../utils/visualSearch.js';
 
 const router = express.Router();
 
@@ -47,6 +48,7 @@ async function ensureInventoryId(artwork) {
 function sanitizeArtworkPayload(body = {}) {
   const payload = { ...body };
   delete payload.inventoryId;
+  payload.imageFingerprint = String(payload.imageFingerprint || '').trim();
   return payload;
 }
 
@@ -81,12 +83,52 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+router.post('/visual-search', async (req, res) => {
+  try {
+    const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
+    const includeInactive = actorRole === 'super admin' && String(req.body?.includeInactive || '').toLowerCase() === 'true';
+    const imageFingerprint = String(req.body?.imageFingerprint || '').trim();
+    const limit = Math.min(Math.max(Number.parseInt(String(req.body?.limit || '8'), 10) || 8, 1), 20);
+
+    if (!isValidFingerprint(imageFingerprint)) {
+      return res.status(400).json({ message: 'A valid visual fingerprint is required.' });
+    }
+
+    const query = includeInactive ? { imageFingerprint: { $ne: '' } } : { isActive: { $ne: false }, imageFingerprint: { $ne: '' } };
+    const artworks = await Artwork.find(query).sort({ createdAt: -1 });
+
+    const matches = artworks
+      .map((artwork) => {
+        const comparison = compareFingerprints(imageFingerprint, artwork.imageFingerprint);
+        if (!comparison) return null;
+        return {
+          artwork,
+          similarity: comparison.similarity,
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) => right.similarity - left.similarity)
+      .slice(0, limit)
+      .map(({ artwork, similarity }) => ({
+        ...artwork.toObject(),
+        similarity: Number(similarity.toFixed(4)),
+      }));
+
+    return res.json(matches);
+  } catch {
+    return res.status(500).json({ message: 'Failed to run visual search.' });
+  }
+});
+
 router.post('/', async (req, res) => {
   try {
     const payload = sanitizeArtworkPayload(req.body);
     const uploadedImage = await uploadArtworkImage(payload.imageUrl);
     payload.imageUrl = uploadedImage.imageUrl;
     payload.imagePublicId = uploadedImage.imagePublicId;
+    if (!payload.imageUrl) {
+      payload.imageFingerprint = '';
+    }
     const artwork = await Artwork.create(payload);
     await ensureInventoryId(artwork);
     res.status(201).json(artwork);
@@ -116,9 +158,11 @@ router.put('/:id', async (req, res) => {
     } else if (isRemovingImage) {
       payload.imageUrl = '';
       payload.imagePublicId = '';
+      payload.imageFingerprint = '';
     } else {
       payload.imageUrl = currentImageUrl;
       payload.imagePublicId = currentImagePublicId;
+      payload.imageFingerprint = String(existing.imageFingerprint || '').trim();
     }
 
     const updated = await Artwork.findByIdAndUpdate(
@@ -141,6 +185,30 @@ router.put('/:id', async (req, res) => {
     res.json(updated);
   } catch (error) {
     res.status(400).json({ message: error?.message || 'Failed to update artwork' });
+  }
+});
+
+router.patch('/:id/fingerprint', async (req, res) => {
+  try {
+    const imageFingerprint = String(req.body?.imageFingerprint || '').trim();
+    if (!isValidFingerprint(imageFingerprint)) {
+      return res.status(400).json({ message: 'A valid visual fingerprint is required.' });
+    }
+
+    const updated = await Artwork.findByIdAndUpdate(
+      req.params.id,
+      { imageFingerprint },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Artwork not found' });
+    }
+
+    await ensureInventoryId(updated);
+    return res.json(updated);
+  } catch {
+    return res.status(400).json({ message: 'Failed to update artwork fingerprint.' });
   }
 });
 

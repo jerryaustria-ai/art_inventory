@@ -20,6 +20,7 @@ const artworkSchema = new mongoose.Schema(
     notes: { type: String, default: '' },
     imageUrl: { type: String, default: '' },
     imagePublicId: { type: String, default: '', trim: true },
+    imageFingerprint: { type: String, default: '', trim: true },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

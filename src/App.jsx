@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { computeVisualFingerprintFromFile, computeVisualFingerprintFromUrl } from './utils/visualFingerprint.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 const AUTH_STORAGE_KEY = 'art_inventory_auth_v1';
@@ -11,6 +12,7 @@ let xlsxLibPromise;
 const LazyAdminPage = lazy(() => import('./components/AdminPage.jsx'));
 const LazyImageViewerModal = lazy(() => import('./components/ImageViewerModal.jsx'));
 const LazyQrScannerModal = lazy(() => import('./components/QrScannerModal.jsx'));
+const LazyVisualSearchModal = lazy(() => import('./components/VisualSearchModal.jsx'));
 
 function loadQrcodeLib() {
   if (!qrcodeLibPromise) {
@@ -54,6 +56,7 @@ const blankForm = {
   price: '',
   notes: '',
   imageUrl: '',
+  imageFingerprint: '',
 };
 
 const phpCurrencyFormatter = new Intl.NumberFormat('en-PH', {
@@ -88,6 +91,7 @@ function normalizeArtwork(item) {
     id: item._id,
     inventoryId: item.inventoryId || '',
     imagePublicId: item.imagePublicId || '',
+    imageFingerprint: item.imageFingerprint || '',
     category: item.category || '',
     place: item.place || '',
     storageLocation: item.storageLocation || '',
@@ -287,6 +291,14 @@ function InventoryForm({
     const file = event.target.files?.[0];
     if (!file) return;
 
+    void computeVisualFingerprintFromFile(file)
+      .then((fingerprint) => {
+        setForm((previous) => ({ ...previous, imageFingerprint: fingerprint }));
+      })
+      .catch(() => {
+        setForm((previous) => ({ ...previous, imageFingerprint: '' }));
+      });
+
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
@@ -297,7 +309,7 @@ function InventoryForm({
   };
 
   const clearImage = () => {
-    setForm((previous) => ({ ...previous, imageUrl: '', imagePublicId: '' }));
+    setForm((previous) => ({ ...previous, imageUrl: '', imagePublicId: '', imageFingerprint: '' }));
   };
 
   return (
@@ -674,11 +686,16 @@ function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+  const [isVisualSearchOpen, setIsVisualSearchOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState('');
+  const [visualSearchError, setVisualSearchError] = useState('');
   const hasLoadedCategoriesRef = useRef(false);
   const inventoryLoadMoreTimeoutRef = useRef(null);
   const inventoryLoadMoreRef = useRef(null);
   const [isQrPhotoScanning, setIsQrPhotoScanning] = useState(false);
+  const [isVisualSearchProcessing, setIsVisualSearchProcessing] = useState(false);
+  const [visualSearchPreview, setVisualSearchPreview] = useState('');
+  const [visualSearchResults, setVisualSearchResults] = useState([]);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [pendingItemId, setPendingItemId] = useState(readItemIdFromUrl);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
@@ -693,7 +710,10 @@ function App() {
   const html5QrRef = useRef(null);
   const hasHandledScanRef = useRef(false);
   const qrPhotoInputRef = useRef(null);
+  const visualSearchInputRef = useRef(null);
   const inventorySectionRef = useRef(null);
+  const syncingFingerprintIdsRef = useRef(new Set());
+  const failedFingerprintIdsRef = useRef(new Set());
   const isPictureOnly = displayMode === 'image';
   const canManage = session?.role === 'admin' || session?.role === 'super admin';
   const canOpenAdminPage = session?.role === 'super admin';
@@ -762,6 +782,44 @@ function App() {
     return normalizeArtwork(data);
   };
 
+  const saveArtworkFingerprint = async (itemId, imageFingerprint) => {
+    const response = await fetch(`${API_BASE}/artworks/${itemId}/fingerprint`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageFingerprint }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to save artwork fingerprint.');
+    }
+
+    const data = await response.json();
+    return normalizeArtwork(data);
+  };
+
+  const runVisualSearch = async (imageFingerprint) => {
+    const response = await fetch(`${API_BASE}/artworks/visual-search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-role': session?.role || '',
+      },
+      body: JSON.stringify({
+        imageFingerprint,
+        limit: 8,
+        includeInactive: session?.role === 'super admin',
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.message || 'Failed to run visual search.');
+    }
+
+    const data = await response.json();
+    return Array.isArray(data) ? data.map(normalizeArtwork) : [];
+  };
+
   useEffect(() => {
     if (!selectedItem) {
       setDetailsQr('');
@@ -814,6 +872,14 @@ function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (visualSearchPreview) {
+        URL.revokeObjectURL(visualSearchPreview);
+      }
+    };
+  }, [visualSearchPreview]);
 
   useEffect(() => {
     if (!session) {
@@ -879,6 +945,44 @@ function App() {
 
     tryFetchPending();
   }, [inventory, pendingItemId, selectedId, session]);
+
+  useEffect(() => {
+    if (!inventory.length) return undefined;
+
+    const candidates = inventory.filter(
+      (item) =>
+        item.imageUrl &&
+        !item.imageFingerprint &&
+        !syncingFingerprintIdsRef.current.has(item.id) &&
+        !failedFingerprintIdsRef.current.has(item.id)
+    );
+
+    if (!candidates.length) return undefined;
+
+    let isCancelled = false;
+    const nextCandidate = candidates[0];
+    syncingFingerprintIdsRef.current.add(nextCandidate.id);
+
+    const syncFingerprint = async () => {
+      try {
+        const imageFingerprint = await computeVisualFingerprintFromUrl(nextCandidate.imageUrl);
+        if (isCancelled) return;
+        const updatedItem = await saveArtworkFingerprint(nextCandidate.id, imageFingerprint);
+        if (isCancelled) return;
+        setInventory((previous) => previous.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
+      } catch {
+        failedFingerprintIdsRef.current.add(nextCandidate.id);
+      } finally {
+        syncingFingerprintIdsRef.current.delete(nextCandidate.id);
+      }
+    };
+
+    void syncFingerprint();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [inventory]);
 
   const fetchUsers = async () => {
     setIsUsersLoading(true);
@@ -2336,6 +2440,61 @@ function App() {
     void stopQrScanner();
   };
 
+  const closeVisualSearch = () => {
+    setIsVisualSearchOpen(false);
+    setVisualSearchError('');
+    setIsVisualSearchProcessing(false);
+    setVisualSearchPreview('');
+    setVisualSearchResults([]);
+  };
+
+  const openVisualSearch = () => {
+    setVisualSearchError('');
+    setVisualSearchResults([]);
+    setVisualSearchPreview('');
+    setIsVisualSearchOpen(true);
+    setIsMobileMenuOpen(false);
+    setIsMobileSearchOpen(false);
+  };
+
+  const handlePickVisualSearchImage = async (file) => {
+    if (!file) return;
+
+    const objectUrl = URL.createObjectURL(file);
+    setVisualSearchPreview(objectUrl);
+    setIsVisualSearchProcessing(true);
+    setVisualSearchError('');
+    setVisualSearchResults([]);
+
+    try {
+      const imageFingerprint = await computeVisualFingerprintFromFile(file);
+      const matches = await runVisualSearch(imageFingerprint);
+      setVisualSearchResults(matches);
+      if (!matches.length) {
+        setVisualSearchError('No close artwork match found yet.');
+      }
+    } catch (error) {
+      setVisualSearchError(error.message || 'Failed to run visual search.');
+    } finally {
+      setIsVisualSearchProcessing(false);
+    }
+  };
+
+  const handleOpenVisualSearchResult = (item) => {
+    if (!item?.id) return;
+    setCurrentPage('inventory');
+    setInventory((previous) => {
+      if (previous.some((existingItem) => existingItem.id === item.id)) return previous;
+      return [item, ...previous];
+    });
+    setSelectedId(item.id);
+    setIsVisualSearchOpen(false);
+    setVisualSearchError('');
+    setVisualSearchPreview('');
+    setVisualSearchResults([]);
+    updateItemIdInUrl(item.id);
+  };
+
   const handleScannedQr = (rawValue) => {
     const value = String(rawValue || '').trim();
     if (!value) return;
@@ -2655,6 +2814,15 @@ function App() {
               >
                 Scan QR
               </button>
+              <button
+                type="button"
+                className="mobile-search-link"
+                onClick={() => {
+                  openVisualSearch();
+                }}
+              >
+                Visual Search
+              </button>
             </div>
           </div>
         ) : null}
@@ -2675,6 +2843,9 @@ function App() {
               onClick={() => setCurrentPage('inventory')}
             >
               Inventory
+            </button>
+            <button type="button" className="ghost" onClick={openVisualSearch}>
+              Visual Search
             </button>
             {canOpenAdminPage ? (
               <button
@@ -2844,6 +3015,21 @@ function App() {
                 <span className="mobile-menu-item-main">
                   <span className="mobile-menu-icon">QR</span>
                   <span>Scan QR Code</span>
+                </span>
+                <span className="mobile-menu-chevron" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+              <button
+                type="button"
+                className="mobile-menu-item ghost"
+                onClick={() => {
+                  openVisualSearch();
+                }}
+              >
+                <span className="mobile-menu-item-main">
+                  <span className="mobile-menu-icon">AI</span>
+                  <span>Visual Search</span>
                 </span>
                 <span className="mobile-menu-chevron" aria-hidden="true">
                   ›
@@ -3599,6 +3785,29 @@ function App() {
             scanQrFromImageFile={scanQrFromImageFile}
             isQrPhotoScanning={isQrPhotoScanning}
             closeQrScanner={closeQrScanner}
+          />
+        </Suspense>
+      ) : null}
+
+      {isVisualSearchOpen ? (
+        <Suspense
+          fallback={
+            <div className="modal-backdrop">
+              <section className="panel modal qr-scanner-modal">
+                <p className="muted">Loading visual search...</p>
+              </section>
+            </div>
+          }
+        >
+          <LazyVisualSearchModal
+            visualSearchError={visualSearchError}
+            visualSearchPreview={visualSearchPreview}
+            visualSearchResults={visualSearchResults}
+            visualSearchInputRef={visualSearchInputRef}
+            isVisualSearchProcessing={isVisualSearchProcessing}
+            handlePickVisualSearchImage={handlePickVisualSearchImage}
+            handleOpenVisualSearchResult={handleOpenVisualSearchResult}
+            closeVisualSearch={closeVisualSearch}
           />
         </Suspense>
       ) : null}
