@@ -767,6 +767,7 @@ function App() {
   const panStartRef = useRef({ x: 0, y: 0 });
   const panOriginRef = useRef({ x: 0, y: 0 });
   const isPanningRef = useRef(false);
+  const inventoryScrollRestoreRef = useRef(null);
   const html5QrRef = useRef(null);
   const hasHandledScanRef = useRef(false);
   const qrPhotoInputRef = useRef(null);
@@ -2216,11 +2217,22 @@ function App() {
   };
 
   const handleCloseSelectedItem = () => {
+    const restoreScrollTop = inventoryScrollRestoreRef.current;
     setSelectedId('');
     setViewerReturnId('');
     setIsMoveModalOpen(false);
     setMoveForm(blankMoveForm);
     setMoveFormError('');
+
+    if (isMobileViewport && Number.isFinite(restoreScrollTop)) {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: restoreScrollTop, behavior: 'auto' });
+        inventoryScrollRestoreRef.current = null;
+      });
+      return;
+    }
+
+    inventoryScrollRestoreRef.current = null;
   };
 
   const toggleExpandedCard = (id) => {
@@ -3131,6 +3143,16 @@ function App() {
     updateItemIdInUrl(item.id);
   };
 
+  const handleOpenSelectedItem = (itemId) => {
+    if (!itemId) return;
+
+    if (isMobileViewport) {
+      inventoryScrollRestoreRef.current = window.scrollY || window.pageYOffset || 0;
+    }
+
+    setSelectedId(itemId);
+  };
+
   const handleScannedQr = (rawValue) => {
     const value = String(rawValue || '').trim();
     if (!value) return;
@@ -3949,7 +3971,7 @@ function App() {
               <button
                 type="button"
                 className="card-media-btn"
-                onClick={() => setSelectedId(item.id)}
+                onClick={() => handleOpenSelectedItem(item.id)}
               >
                 {item.imageUrl ? (
                   <img src={item.imageUrl} alt={getArtworkTitle(item.title)} />
@@ -3961,7 +3983,7 @@ function App() {
               {displayMode === 'details' ? (
                 <div className="card-body">
                   <h3>
-                    <button type="button" className="title-btn" onClick={() => setSelectedId(item.id)}>
+                    <button type="button" className="title-btn" onClick={() => handleOpenSelectedItem(item.id)}>
                       {getArtworkTitle(item.title)}
                     </button>
                   </h3>
@@ -4083,7 +4105,7 @@ function App() {
                   </div>
                 ) : (
                   <div className="picture-card-footer">
-                    <button type="button" className="picture-title-btn" onClick={() => setSelectedId(item.id)}>
+                    <button type="button" className="picture-title-btn" onClick={() => handleOpenSelectedItem(item.id)}>
                       {getArtworkTitle(item.title)}
                     </button>
                     <div className="actions card-actions">
