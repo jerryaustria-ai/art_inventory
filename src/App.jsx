@@ -289,10 +289,18 @@ function InventoryForm({
   onCancel,
   hideTitle = false,
   categories = [],
+  locations = [],
   submitError = '',
 }) {
   const [form, setForm] = useState(editingItem || blankForm);
   const [formError, setFormError] = useState('');
+  const placeOptions = useMemo(() => {
+    const values = new Set([
+      ...locations.map((location) => String(location?.name || '').trim()).filter(Boolean),
+      String(form.place || '').trim(),
+    ]);
+    return Array.from(values).filter(Boolean).sort((left, right) => left.localeCompare(right));
+  }, [form.place, locations]);
 
   useEffect(() => {
     setForm(editingItem || blankForm);
@@ -380,7 +388,14 @@ function InventoryForm({
       </label>
       <label>
         Place
-        <input name="place" value={form.place} onChange={handleChange} placeholder="Gallery / branch / room" />
+        <select name="place" value={form.place} onChange={handleChange}>
+          <option value="">Select place</option>
+          {placeOptions.map((place) => (
+            <option key={place} value={place}>
+              {place}
+            </option>
+          ))}
+        </select>
       </label>
       <label>
         Storage Location
@@ -1122,6 +1137,18 @@ function App() {
       isCancelled = true;
     };
   }, [inventory]);
+
+  useEffect(() => {
+    if (!isMobileDetailsPage || !selectedItem?.id) return;
+
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [isMobileDetailsPage, selectedItem?.id]);
+
+  useEffect(() => {
+    if (!isMobileFormPage) return;
+
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [editingId, isMobileFormPage]);
 
   const fetchUsers = async () => {
     setIsUsersLoading(true);
@@ -2795,11 +2822,6 @@ function App() {
       <section className="location-history-section">
         <div className="heading-row">
           <h3>Location History</h3>
-          {canManage ? (
-            <button type="button" onClick={handleOpenMoveModal}>
-              Move Artwork
-            </button>
-          ) : null}
         </div>
         {isLocationHistoryLoading ? <p className="muted">Loading location history...</p> : null}
         {!isLocationHistoryLoading && locationHistory.length === 0 ? (
@@ -3684,19 +3706,23 @@ function App() {
                     strokeWidth="2"
                   />
                 </svg>
+                <span>Back</span>
               </button>
-              <div>
+              <div className="mobile-form-page-heading">
                 <h2>{editingItem ? 'Edit Item' : 'Add New Item'}</h2>
               </div>
             </div>
-            <InventoryForm
-              onSubmit={handleSubmit}
-              editingItem={editingItem}
-              onCancel={handleCloseForm}
-              hideTitle
-              categories={categoryOptions}
-              submitError={inventoryFormError}
-            />
+            <section className="panel mobile-form-card">
+              <InventoryForm
+                onSubmit={handleSubmit}
+                editingItem={editingItem}
+                onCancel={handleCloseForm}
+                hideTitle
+                categories={categoryOptions}
+                locations={locations}
+                submitError={inventoryFormError}
+              />
+            </section>
           </section>
         ) : isMobileDetailsPage ? (
           <section className="panel mobile-details-page">
@@ -3712,10 +3738,8 @@ function App() {
                     strokeWidth="2"
                   />
                 </svg>
+                <span>Back</span>
               </button>
-              <div>
-                <h2>Item Details</h2>
-              </div>
             </div>
             {selectedItemDetailsContent}
           </section>
@@ -4170,6 +4194,7 @@ function App() {
               editingItem={editingItem}
               onCancel={handleCloseForm}
               categories={categoryOptions}
+              locations={locations}
               submitError={inventoryFormError}
             />
           </section>
@@ -4443,7 +4468,22 @@ function App() {
               {moveFormError ? <p className="form-error">{moveFormError}</p> : null}
               <label>
                 Place
-                <input name="place" value={moveForm.place} onChange={handleMoveFormChange} placeholder="Gallery / branch / room" />
+                <select name="place" value={moveForm.place} onChange={handleMoveFormChange}>
+                  <option value="">Select place</option>
+                  {Array.from(
+                    new Set([
+                      ...locations.map((location) => String(location?.name || '').trim()).filter(Boolean),
+                      String(moveForm.place || '').trim(),
+                    ])
+                  )
+                    .filter(Boolean)
+                    .sort((left, right) => left.localeCompare(right))
+                    .map((place) => (
+                      <option key={place} value={place}>
+                        {place}
+                      </option>
+                    ))}
+                </select>
               </label>
               <label>
                 Storage Location

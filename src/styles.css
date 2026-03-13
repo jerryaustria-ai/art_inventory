@@ -89,6 +89,17 @@ body {
   }
 }
 
+@keyframes mobileSheetSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(36px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .scroll-top-link {
   position: fixed;
   right: 1rem;
@@ -648,36 +659,50 @@ button.danger {
   gap: 1rem;
   padding: 0 0.5rem 1.5rem;
   margin-top: 0.25rem;
+  align-content: start;
+  animation: mobileSheetSlideUp 220ms ease-out;
 }
 
 .mobile-details-page {
   display: grid;
   gap: 1rem;
+  animation: mobileSheetSlideUp 240ms ease-out;
 }
 
 .mobile-form-page-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 1fr;
   align-items: start;
-  gap: 0.85rem;
+  gap: 0.4rem;
 }
 
 .mobile-form-back-link {
-  width: 1.5rem;
-  height: 1.5rem;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 0.25rem;
   padding: 0;
   background: transparent;
   color: #5b6a6d;
   border: 0;
   border-radius: 0;
+  width: fit-content;
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
 .mobile-form-back-link svg {
   width: 1.1rem;
   height: 1.1rem;
+}
+
+.mobile-form-page-heading h2 {
+  margin: 0;
+}
+
+.mobile-form-card {
+  padding: 1rem;
+  animation: mobileSheetSlideUp 260ms ease-out;
 }
 
 .heading-row {
@@ -1809,10 +1834,45 @@ button.danger {
   .mobile-details-page {
     min-height: calc(100vh - 8.5rem);
     align-content: start;
+    gap: 0.85rem;
   }
 
   .mobile-form-page-header {
     align-items: flex-start;
+  }
+
+  .mobile-details-page > h2 {
+    margin-top: 0;
+    margin-bottom: 0;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .mobile-details-page .totals-subtitle {
+    margin-top: -0.3rem;
+    margin-bottom: 0.2rem;
+    line-height: 1.3;
+  }
+
+  .mobile-details-page .details-image {
+    margin-bottom: 0.25rem;
+  }
+
+  .mobile-details-page .details-grid {
+    gap: 0.7rem;
+  }
+
+  .mobile-details-page .details-grid p {
+    line-height: 1.45;
+  }
+
+  .mobile-details-page .location-history-section {
+    margin-top: 0.3rem;
+  }
+
+  .mobile-details-page .actions {
+    margin-top: 0.3rem;
+    gap: 0.65rem;
   }
 
   .heading-row h2 {
