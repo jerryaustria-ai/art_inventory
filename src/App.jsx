@@ -172,6 +172,8 @@ const blankLocationForm = {
   notes: '',
 };
 
+const INVENTORY_PAGE_SIZE = 24;
+
 function formatDateTime(value) {
   if (!value) return 'N/A';
   const parsed = new Date(value);
@@ -746,8 +748,9 @@ function App() {
   const [displayMode, setDisplayMode] = useState('image');
   const [sortBy, setSortBy] = useState('recent');
   const [sortDirection, setSortDirection] = useState('desc');
-  const [visibleInventoryCount, setVisibleInventoryCount] = useState(20);
   const [isLoadingMoreInventory, setIsLoadingMoreInventory] = useState(false);
+  const [inventoryTotalCount, setInventoryTotalCount] = useState(0);
+  const [inventoryHasMorePages, setInventoryHasMorePages] = useState(false);
   const [userItemsPerPage, setUserItemsPerPage] = useState(20);
   const [userPageNumber, setUserPageNumber] = useState(1);
   const [auditItemsPerPage, setAuditItemsPerPage] = useState(20);
@@ -869,6 +872,37 @@ function App() {
     }
     const data = await response.json();
     return Array.isArray(data) ? data.map(normalizeArtwork) : [];
+  };
+
+  const fetchInventoryPage = async (options = {}, activeSession = session) => {
+    const isSuperAdmin = activeSession?.role === 'super admin';
+    const params = new URLSearchParams({
+      limit: String(options.limit || INVENTORY_PAGE_SIZE),
+      offset: String(options.offset || 0),
+    });
+    if (isSuperAdmin) {
+      params.set('includeInactive', 'true');
+    }
+
+    const response = await fetch(`${API_BASE}/artworks?${params.toString()}`, {
+      headers: {
+        'x-actor-role': activeSession?.role || '',
+      },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch inventory');
+    }
+
+    const data = await response.json();
+    const items = Array.isArray(data?.items) ? data.items.map(normalizeArtwork) : [];
+
+    return {
+      items,
+      total: Number(data?.total || items.length || 0),
+      offset: Number(data?.offset || options.offset || 0),
+      limit: Number(data?.limit || options.limit || INVENTORY_PAGE_SIZE),
+      hasMore: Boolean(data?.hasMore),
+    };
   };
 
   const fetchInventoryItemById = async (itemId, activeSession = session) => {
@@ -1032,6 +1066,8 @@ function App() {
     if (!session) {
       setIsLoading(false);
       setInventory([]);
+      setInventoryTotalCount(0);
+      setInventoryHasMorePages(false);
       setCategories([]);
       setLocations([]);
       return;
@@ -1041,9 +1077,11 @@ function App() {
 
     const loadAppData = async () => {
       try {
-        const data = await fetchInventory(session);
+        const page = await fetchInventoryPage({ offset: 0, limit: INVENTORY_PAGE_SIZE }, session);
         if (!isMounted) return;
-        setInventory(data);
+        setInventory(page.items);
+        setInventoryTotalCount(page.total);
+        setInventoryHasMorePages(page.hasMore);
         setApiError('');
         void fetchCategories(false, { silent: true });
         void fetchLocations({ silent: true });
@@ -1072,9 +1110,23 @@ function App() {
 
     const refreshInventoryInBackground = async () => {
       try {
-        const refreshedInventory = await fetchInventory(session);
+        const refreshedInventory = await fetchInventoryPage({ offset: 0, limit: INVENTORY_PAGE_SIZE }, session);
         if (!isActive) return;
-        setInventory(refreshedInventory);
+        setInventory((previous) => {
+          const byId = new Map(previous.map((item) => [item.id, item]));
+          refreshedInventory.items.forEach((item) => {
+            byId.set(item.id, item);
+          });
+          const nextItems = refreshedInventory.items.map((item) => byId.get(item.id) || item);
+          previous.forEach((item) => {
+            if (!refreshedInventory.items.some((nextItem) => nextItem.id === item.id)) {
+              nextItems.push(item);
+            }
+          });
+          return nextItems;
+        });
+        setInventoryTotalCount(refreshedInventory.total);
+        setInventoryHasMorePages((previousHasMore) => previousHasMore || refreshedInventory.hasMore);
       } catch {
         // Keep background refresh silent so the UI does not flash errors while the user is browsing.
       }
@@ -1662,6 +1714,8 @@ function App() {
 
       const refreshedInventory = await fetchInventory(session);
       setInventory(refreshedInventory);
+      setInventoryTotalCount(refreshedInventory.length);
+      setInventoryHasMorePages(false);
       setInventoryImportMessage(
         `Import complete. Created: ${createdCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}.`
       );
@@ -1719,6 +1773,8 @@ function App() {
       await fetchCategories(true);
       const refreshedInventory = await fetchInventory(session);
       setInventory(refreshedInventory);
+      setInventoryTotalCount(refreshedInventory.length);
+      setInventoryHasMorePages(false);
       if (editingCategoryId && categoryFilter === previousCategoryName) {
         setCategoryFilter(trimmedName);
       }
@@ -1776,6 +1832,8 @@ function App() {
       await fetchCategories(true);
       const refreshedInventory = await fetchInventory(session);
       setInventory(refreshedInventory);
+      setInventoryTotalCount(refreshedInventory.length);
+      setInventoryHasMorePages(false);
       if (categoryFilter === category.name) {
         setCategoryFilter('All');
       }
@@ -2092,13 +2150,29 @@ function App() {
     () => inventory.reduce((sum, item) => sum + Number(item.price || 0), 0),
     [inventory]
   );
-  const inventoryBatchSize = isMobileViewport ? 24 : 20;
 
-  const visibleInventory = useMemo(
-    () => filteredInventory.slice(0, visibleInventoryCount),
-    [filteredInventory, visibleInventoryCount]
-  );
-  const hasMoreInventory = visibleInventoryCount < filteredInventory.length;
+  const visibleInventory = filteredInventory;
+  const hasMoreInventory = inventoryHasMorePages;
+
+  const loadMoreInventory = async () => {
+    if (!session || isLoadingMoreInventory || !inventoryHasMorePages) return;
+
+    setIsLoadingMoreInventory(true);
+    try {
+      const nextPage = await fetchInventoryPage({ offset: inventory.length, limit: INVENTORY_PAGE_SIZE }, session);
+      setInventory((previous) => {
+        const existingIds = new Set(previous.map((item) => item.id));
+        const appendedItems = nextPage.items.filter((item) => !existingIds.has(item.id));
+        return [...previous, ...appendedItems];
+      });
+      setInventoryTotalCount(nextPage.total);
+      setInventoryHasMorePages(nextPage.hasMore);
+    } catch {
+      // Keep load-more failures quiet and let the user continue using loaded items.
+    } finally {
+      setIsLoadingMoreInventory(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -2110,10 +2184,8 @@ function App() {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting || isLoadingMoreInventory) return;
-        setIsLoadingMoreInventory(true);
         inventoryLoadMoreTimeoutRef.current = window.setTimeout(() => {
-          setVisibleInventoryCount((previous) => Math.min(previous + inventoryBatchSize, filteredInventory.length));
-          setIsLoadingMoreInventory(false);
+          void loadMoreInventory();
           inventoryLoadMoreTimeoutRef.current = null;
         }, isMobileViewport ? 120 : 200);
       },
@@ -2127,7 +2199,7 @@ function App() {
     return () => {
       observer.disconnect();
     };
-  }, [filteredInventory.length, hasMoreInventory, inventoryBatchSize, isLoadingMoreInventory, isMobileViewport]);
+  }, [hasMoreInventory, isLoadingMoreInventory, isMobileViewport, loadMoreInventory]);
 
   const userTotalPages = Math.max(1, Math.ceil(users.length / userItemsPerPage));
   const paginatedUsers = useMemo(() => {
@@ -2263,6 +2335,7 @@ function App() {
       }
       const createdItem = normalizeArtwork(await response.json());
       setInventory((previous) => [createdItem, ...previous]);
+      setInventoryTotalCount((previous) => previous + 1);
       setIsFormOpen(false);
       setInventoryFormError('');
       setApiError('');
@@ -2359,6 +2432,9 @@ function App() {
           ? previous.map((item) => (item.id === id ? { ...item, isActive: false } : item))
           : previous.filter((item) => item.id !== id)
       );
+      if (session?.role !== 'super admin') {
+        setInventoryTotalCount((previous) => Math.max(0, previous - 1));
+      }
       if (editingId === id) setEditingId('');
       if (selectedId === id) setSelectedId('');
       if (returnDetailsId === id) setReturnDetailsId('');
@@ -2394,6 +2470,7 @@ function App() {
         throw new Error('Failed to permanently delete artwork');
       }
       setInventory((previous) => previous.filter((item) => item.id !== id));
+      setInventoryTotalCount((previous) => Math.max(0, previous - 1));
       if (editingId === id) setEditingId('');
       if (selectedId === id) setSelectedId('');
       if (returnDetailsId === id) setReturnDetailsId('');
@@ -2483,15 +2560,6 @@ function App() {
   ]
     .filter(Boolean)
     .join(' • ');
-
-  useEffect(() => {
-    setVisibleInventoryCount(inventoryBatchSize);
-    setIsLoadingMoreInventory(false);
-    if (inventoryLoadMoreTimeoutRef.current) {
-      window.clearTimeout(inventoryLoadMoreTimeoutRef.current);
-      inventoryLoadMoreTimeoutRef.current = null;
-    }
-  }, [categoryFilter, inventoryBatchSize, placeFilter, search, sortBy, sortDirection, statusFilter]);
 
   useEffect(() => {
     setUserPageNumber(1);

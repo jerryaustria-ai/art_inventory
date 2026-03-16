@@ -57,10 +57,36 @@ router.get('/', async (req, res) => {
   try {
     const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
     const includeInactive = String(req.query.includeInactive || '').toLowerCase() === 'true';
+    const limitParam = Number.parseInt(String(req.query.limit || ''), 10);
+    const offsetParam = Number.parseInt(String(req.query.offset || ''), 10);
+    const hasPaging = Number.isFinite(limitParam) || Number.isFinite(offsetParam);
+    const limit = Math.min(Math.max(Number.isFinite(limitParam) ? limitParam : 24, 1), 100);
+    const offset = Math.max(Number.isFinite(offsetParam) ? offsetParam : 0, 0);
     const query =
       actorRole === 'super admin' && includeInactive ? {} : { isActive: { $ne: false } };
-    const artworks = await Artwork.find(query).sort({ createdAt: -1 }).lean();
-    return res.json(artworks);
+
+    if (!hasPaging) {
+      const artworks = await Artwork.find(query).sort({ createdAt: -1 }).lean();
+      return res.json(artworks);
+    }
+
+    const [items, total] = await Promise.all([
+      Artwork.find(query)
+        .sort({ createdAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select('-imageFingerprint -imagePublicId')
+        .lean(),
+      Artwork.countDocuments(query),
+    ]);
+
+    return res.json({
+      items,
+      total,
+      offset,
+      limit,
+      hasMore: offset + items.length < total,
+    });
   } catch {
     return res.status(500).json({ message: 'Failed to fetch artworks' });
   }
