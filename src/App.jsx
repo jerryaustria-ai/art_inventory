@@ -8,6 +8,7 @@ let qrcodeLibPromise;
 let jsqrLibPromise;
 let html5QrcodeLibPromise;
 let xlsxLibPromise;
+const INVENTORY_PAGE_SIZE = 20;
 
 const LazyAdminPage = lazy(() => import('./components/AdminPage.jsx'));
 const LazyImageViewerModal = lazy(() => import('./components/ImageViewerModal.jsx'));
@@ -746,7 +747,7 @@ function App() {
   const [displayMode, setDisplayMode] = useState('image');
   const [sortBy, setSortBy] = useState('recent');
   const [sortDirection, setSortDirection] = useState('desc');
-  const [visibleInventoryCount, setVisibleInventoryCount] = useState(20);
+  const [inventoryHasMorePages, setInventoryHasMorePages] = useState(false);
   const [isLoadingMoreInventory, setIsLoadingMoreInventory] = useState(false);
   const [userItemsPerPage, setUserItemsPerPage] = useState(20);
   const [userPageNumber, setUserPageNumber] = useState(1);
@@ -869,6 +870,43 @@ function App() {
     }
     const data = await response.json();
     return Array.isArray(data) ? data.map(normalizeArtwork) : [];
+  };
+
+  const fetchInventoryPage = async ({ offset = 0, limit = INVENTORY_PAGE_SIZE } = {}, activeSession = session) => {
+    const isSuperAdmin = activeSession?.role === 'super admin';
+    const params = new URLSearchParams({
+      offset: String(offset),
+      limit: String(limit),
+    });
+    if (isSuperAdmin) {
+      params.set('includeInactive', 'true');
+    }
+
+    const response = await fetch(`${API_BASE}/artworks?${params.toString()}`, {
+      headers: {
+        'x-actor-role': activeSession?.role || '',
+      },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch inventory');
+    }
+
+    const data = await response.json();
+    if (Array.isArray(data)) {
+      const normalizedItems = data.map(normalizeArtwork);
+      const pagedItems = normalizedItems.slice(offset, offset + limit);
+      return {
+        items: pagedItems,
+        hasMore: offset + pagedItems.length < normalizedItems.length,
+        total: normalizedItems.length,
+      };
+    }
+
+    return {
+      items: Array.isArray(data?.items) ? data.items.map(normalizeArtwork) : [],
+      hasMore: Boolean(data?.hasMore),
+      total: Number(data?.total || 0),
+    };
   };
 
   const fetchInventoryItemById = async (itemId, activeSession = session) => {
@@ -1032,6 +1070,7 @@ function App() {
     if (!session) {
       setIsLoading(false);
       setInventory([]);
+      setInventoryHasMorePages(false);
       setCategories([]);
       setLocations([]);
       return;
@@ -1041,9 +1080,10 @@ function App() {
 
     const loadAppData = async () => {
       try {
-        const data = await fetchInventory(session);
+        const page = await fetchInventoryPage({ offset: 0, limit: INVENTORY_PAGE_SIZE }, session);
         if (!isMounted) return;
-        setInventory(data);
+        setInventory(page.items);
+        setInventoryHasMorePages(page.hasMore);
         setApiError('');
         void fetchCategories(false, { silent: true });
         void fetchLocations({ silent: true });
@@ -1072,9 +1112,14 @@ function App() {
 
     const refreshInventoryInBackground = async () => {
       try {
-        const refreshedInventory = await fetchInventory(session);
+        const refreshedInventory = await fetchInventoryPage({ offset: 0, limit: INVENTORY_PAGE_SIZE }, session);
         if (!isActive) return;
-        setInventory(refreshedInventory);
+        setInventory((previous) => {
+          const refreshedIds = new Set(refreshedInventory.items.map((item) => item.id));
+          const preservedTail = previous.filter((item) => !refreshedIds.has(item.id));
+          return [...refreshedInventory.items, ...preservedTail];
+        });
+        setInventoryHasMorePages((previousHasMore) => previousHasMore || refreshedInventory.hasMore);
       } catch {
         // Keep background refresh silent so the UI does not flash errors while the user is browsing.
       }
@@ -1101,6 +1146,27 @@ function App() {
   useEffect(() => {
     setGpsVerificationResult(null);
   }, [selectedItem?.id]);
+
+  useEffect(() => {
+    if (!selectedItem?.id) return undefined;
+
+    let isActive = true;
+
+    fetchInventoryItemById(selectedItem.id, session)
+      .then((fullItem) => {
+        if (!isActive) return;
+        setInventory((previous) =>
+          previous.map((item) => (item.id === fullItem.id ? { ...item, ...fullItem } : item))
+        );
+      })
+      .catch(() => {
+        // Keep the already loaded list item if the detail refresh fails.
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedItem?.id, session]);
 
   useEffect(() => {
     if (!selectedItem?.id || !shouldCheckGpsAfterQrScan) return;
@@ -2092,13 +2158,8 @@ function App() {
     () => inventory.reduce((sum, item) => sum + Number(item.price || 0), 0),
     [inventory]
   );
-  const inventoryBatchSize = isMobileViewport ? 24 : 20;
-
-  const visibleInventory = useMemo(
-    () => filteredInventory.slice(0, visibleInventoryCount),
-    [filteredInventory, visibleInventoryCount]
-  );
-  const hasMoreInventory = visibleInventoryCount < filteredInventory.length;
+  const visibleInventory = filteredInventory;
+  const hasMoreInventory = inventoryHasMorePages;
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -2110,10 +2171,28 @@ function App() {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting || isLoadingMoreInventory) return;
-        setIsLoadingMoreInventory(true);
         inventoryLoadMoreTimeoutRef.current = window.setTimeout(() => {
-          setVisibleInventoryCount((previous) => Math.min(previous + inventoryBatchSize, filteredInventory.length));
-          setIsLoadingMoreInventory(false);
+          const loadNextPage = async () => {
+            if (!session) return;
+            setIsLoadingMoreInventory(true);
+            try {
+              const nextPage = await fetchInventoryPage(
+                { offset: inventory.length, limit: INVENTORY_PAGE_SIZE },
+                session
+              );
+              setInventory((previous) => {
+                const existingIds = new Set(previous.map((item) => item.id));
+                const appendedItems = nextPage.items.filter((item) => !existingIds.has(item.id));
+                return [...previous, ...appendedItems];
+              });
+              setInventoryHasMorePages(nextPage.hasMore);
+            } catch {
+              // Keep load-more failures quiet so the user can continue browsing loaded items.
+            } finally {
+              setIsLoadingMoreInventory(false);
+            }
+          };
+          void loadNextPage();
           inventoryLoadMoreTimeoutRef.current = null;
         }, isMobileViewport ? 120 : 200);
       },
@@ -2127,7 +2206,13 @@ function App() {
     return () => {
       observer.disconnect();
     };
-  }, [filteredInventory.length, hasMoreInventory, inventoryBatchSize, isLoadingMoreInventory, isMobileViewport]);
+  }, [
+    hasMoreInventory,
+    inventory.length,
+    isLoadingMoreInventory,
+    isMobileViewport,
+    session,
+  ]);
 
   const userTotalPages = Math.max(1, Math.ceil(users.length / userItemsPerPage));
   const paginatedUsers = useMemo(() => {
@@ -2459,15 +2544,6 @@ function App() {
     setSortBy('recent');
     setSortDirection('desc');
   };
-
-  useEffect(() => {
-    setVisibleInventoryCount(inventoryBatchSize);
-    setIsLoadingMoreInventory(false);
-    if (inventoryLoadMoreTimeoutRef.current) {
-      window.clearTimeout(inventoryLoadMoreTimeoutRef.current);
-      inventoryLoadMoreTimeoutRef.current = null;
-    }
-  }, [categoryFilter, inventoryBatchSize, placeFilter, search, sortBy, sortDirection, statusFilter]);
 
   const handleCloseMobileSearch = () => {
     clearAllFilters();

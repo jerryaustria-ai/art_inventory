@@ -57,8 +57,34 @@ router.get('/', async (req, res) => {
   try {
     const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
     const includeInactive = String(req.query.includeInactive || '').toLowerCase() === 'true';
+    const rawLimit = Number.parseInt(String(req.query.limit || ''), 10);
+    const rawOffset = Number.parseInt(String(req.query.offset || ''), 10);
+    const hasPaging = Number.isFinite(rawLimit) || Number.isFinite(rawOffset);
+    const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 20, 1), 50);
+    const offset = Math.max(Number.isFinite(rawOffset) ? rawOffset : 0, 0);
     const query =
       actorRole === 'super admin' && includeInactive ? {} : { isActive: { $ne: false } };
+
+    if (hasPaging) {
+      const [items, total] = await Promise.all([
+        Artwork.find(query)
+          .sort({ createdAt: -1 })
+          .skip(offset)
+          .limit(limit)
+          .select('-imageFingerprint -imagePublicId')
+          .lean(),
+        Artwork.countDocuments(query),
+      ]);
+
+      return res.json({
+        items,
+        total,
+        offset,
+        limit,
+        hasMore: offset + items.length < total,
+      });
+    }
+
     const artworks = await Artwork.find(query).sort({ createdAt: -1 }).lean();
     return res.json(artworks);
   } catch {
