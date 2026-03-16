@@ -715,6 +715,7 @@ function App() {
   const [session, setSession] = useState(readAuthSession);
   const [currentPage, setCurrentPage] = useState('inventory');
   const [inventory, setInventory] = useState([]);
+  const [inventorySummary, setInventorySummary] = useState([]);
   const [users, setUsers] = useState([]);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [categories, setCategories] = useState([]);
@@ -922,6 +923,35 @@ function App() {
     return normalizeArtwork(data);
   };
 
+  const fetchInventorySummary = async (activeSession = session) => {
+    try {
+      const isSuperAdmin = activeSession?.role === 'super admin';
+      const url = isSuperAdmin
+        ? `${API_BASE}/artworks/summary?includeInactive=true`
+        : `${API_BASE}/artworks/summary`;
+      const response = await fetch(url, {
+        headers: {
+          'x-actor-role': activeSession?.role || '',
+        },
+      });
+      if (!response.ok) {
+        return [];
+      }
+      const data = await response.json();
+      return Array.isArray(data)
+        ? data.map((item) => ({
+            name: String(item?.name || '').trim(),
+            count: Number(item?.count || 0),
+            activeCount: Number(item?.activeCount || 0),
+            inactiveCount: Number(item?.inactiveCount || 0),
+            value: Number(item?.value || 0),
+          }))
+        : [];
+    } catch {
+      return [];
+    }
+  };
+
   const fetchLocationHistory = async (itemId, activeSession = session) => {
     const response = await fetch(`${API_BASE}/artworks/${itemId}/location-history`, {
       headers: {
@@ -1070,6 +1100,7 @@ function App() {
     if (!session) {
       setIsLoading(false);
       setInventory([]);
+      setInventorySummary([]);
       setInventoryHasMorePages(false);
       setCategories([]);
       setLocations([]);
@@ -1080,9 +1111,13 @@ function App() {
 
     const loadAppData = async () => {
       try {
-        const page = await fetchInventoryPage({ offset: 0, limit: INVENTORY_PAGE_SIZE }, session);
+        const [page, summary] = await Promise.all([
+          fetchInventoryPage({ offset: 0, limit: INVENTORY_PAGE_SIZE }, session),
+          fetchInventorySummary(session),
+        ]);
         if (!isMounted) return;
         setInventory(page.items);
+        setInventorySummary(summary);
         setInventoryHasMorePages(page.hasMore);
         setApiError('');
         void fetchCategories(false, { silent: true });
@@ -1112,13 +1147,17 @@ function App() {
 
     const refreshInventoryInBackground = async () => {
       try {
-        const refreshedInventory = await fetchInventoryPage({ offset: 0, limit: INVENTORY_PAGE_SIZE }, session);
+        const [refreshedInventory, refreshedSummary] = await Promise.all([
+          fetchInventoryPage({ offset: 0, limit: INVENTORY_PAGE_SIZE }, session),
+          fetchInventorySummary(session),
+        ]);
         if (!isActive) return;
         setInventory((previous) => {
           const refreshedIds = new Set(refreshedInventory.items.map((item) => item.id));
           const preservedTail = previous.filter((item) => !refreshedIds.has(item.id));
           return [...refreshedInventory.items, ...preservedTail];
         });
+        setInventorySummary(refreshedSummary);
         setInventoryHasMorePages((previousHasMore) => previousHasMore || refreshedInventory.hasMore);
       } catch {
         // Keep background refresh silent so the UI does not flash errors while the user is browsing.
@@ -1728,6 +1767,7 @@ function App() {
 
       const refreshedInventory = await fetchInventory(session);
       setInventory(refreshedInventory);
+      setInventorySummary(await fetchInventorySummary(session));
       setInventoryImportMessage(
         `Import complete. Created: ${createdCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}.`
       );
@@ -1785,6 +1825,7 @@ function App() {
       await fetchCategories(true);
       const refreshedInventory = await fetchInventory(session);
       setInventory(refreshedInventory);
+      setInventorySummary(await fetchInventorySummary(session));
       if (editingCategoryId && categoryFilter === previousCategoryName) {
         setCategoryFilter(trimmedName);
       }
@@ -1842,6 +1883,7 @@ function App() {
       await fetchCategories(true);
       const refreshedInventory = await fetchInventory(session);
       setInventory(refreshedInventory);
+      setInventorySummary(await fetchInventorySummary(session));
       if (categoryFilter === category.name) {
         setCategoryFilter('All');
       }
@@ -2287,9 +2329,13 @@ function App() {
     [sculptureOnlyItems]
   );
 
-  const categoryStats = useMemo(
-    () =>
-      categoryOptions.map((category) => {
+  const categoryStats = useMemo(() => {
+    if (inventorySummary.length) {
+      return inventorySummary.filter((category) => category.count > 0);
+    }
+
+    return categoryOptions
+      .map((category) => {
         const items = inventory.filter((item) => item.category === category);
         const activeCount = items.filter((item) => item.isActive !== false).length;
         const inactiveCount = items.length - activeCount;
@@ -2300,9 +2346,9 @@ function App() {
           inactiveCount,
           value: items.reduce((sum, item) => sum + Number(item.price || 0), 0),
         };
-      }).filter((category) => category.count > 0),
-    [categoryOptions, inventory]
-  );
+      })
+      .filter((category) => category.count > 0);
+  }, [categoryOptions, inventory, inventorySummary]);
 
   const handleSubmit = async (form) => {
     if (editingItem) {
@@ -2319,6 +2365,7 @@ function App() {
         }
         const updatedItem = normalizeArtwork(await response.json());
         setInventory((previous) => previous.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
+        void fetchInventorySummary(session).then(setInventorySummary).catch(() => {});
         setEditingId('');
         setIsFormOpen(false);
         setInventoryFormError('');
@@ -2348,6 +2395,7 @@ function App() {
       }
       const createdItem = normalizeArtwork(await response.json());
       setInventory((previous) => [createdItem, ...previous]);
+      void fetchInventorySummary(session).then(setInventorySummary).catch(() => {});
       setIsFormOpen(false);
       setInventoryFormError('');
       setApiError('');
@@ -2444,6 +2492,7 @@ function App() {
           ? previous.map((item) => (item.id === id ? { ...item, isActive: false } : item))
           : previous.filter((item) => item.id !== id)
       );
+      void fetchInventorySummary(session).then(setInventorySummary).catch(() => {});
       if (editingId === id) setEditingId('');
       if (selectedId === id) setSelectedId('');
       if (returnDetailsId === id) setReturnDetailsId('');
@@ -2479,6 +2528,7 @@ function App() {
         throw new Error('Failed to permanently delete artwork');
       }
       setInventory((previous) => previous.filter((item) => item.id !== id));
+      void fetchInventorySummary(session).then(setInventorySummary).catch(() => {});
       if (editingId === id) setEditingId('');
       if (selectedId === id) setSelectedId('');
       if (returnDetailsId === id) setReturnDetailsId('');
@@ -2510,6 +2560,7 @@ function App() {
       }
       const updated = normalizeArtwork(await response.json());
       setInventory((previous) => previous.map((item) => (item.id === updated.id ? updated : item)));
+      void fetchInventorySummary(session).then(setInventorySummary).catch(() => {});
       if (selectedId === id) {
         setSelectedId(updated.id);
       }

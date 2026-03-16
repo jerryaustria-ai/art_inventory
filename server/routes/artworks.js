@@ -92,6 +92,61 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get('/summary', async (req, res) => {
+  try {
+    const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
+    const includeInactive = String(req.query.includeInactive || '').toLowerCase() === 'true';
+    const query =
+      actorRole === 'super admin' && includeInactive ? {} : { isActive: { $ne: false } };
+
+    const summary = await Artwork.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: { $trim: { input: { $ifNull: ['$category', ''] } } },
+          count: { $sum: 1 },
+          activeCount: {
+            $sum: {
+              $cond: [{ $ne: ['$isActive', false] }, 1, 0],
+            },
+          },
+          inactiveCount: {
+            $sum: {
+              $cond: [{ $eq: ['$isActive', false] }, 1, 0],
+            },
+          },
+          value: {
+            $sum: {
+              $convert: {
+                input: '$price',
+                to: 'double',
+                onError: 0,
+                onNull: 0,
+              },
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          name: '$_id',
+          count: 1,
+          activeCount: 1,
+          inactiveCount: 1,
+          value: 1,
+        },
+      },
+      { $match: { name: { $ne: '' } } },
+      { $sort: { name: 1 } },
+    ]);
+
+    return res.json(summary);
+  } catch {
+    return res.status(500).json({ message: 'Failed to fetch artwork summary' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
