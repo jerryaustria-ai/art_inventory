@@ -819,6 +819,7 @@ function App() {
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [moveForm, setMoveForm] = useState(blankMoveForm);
   const [moveFormError, setMoveFormError] = useState('');
+  const [isUpdatingViewerCover, setIsUpdatingViewerCover] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [isTotalsOpen, setIsTotalsOpen] = useState(false);
@@ -2875,13 +2876,13 @@ function App() {
     }
   };
 
-  const handleOpenImageViewer = (id) => {
+  const handleOpenImageViewer = (id, imageIndex = 0) => {
     if (isMobileViewport && selectedId === id) {
       setViewerReturnId(id);
       setSelectedId('');
     }
     setViewerId(id);
-    setCurrentViewerImageIndex(0);
+    setCurrentViewerImageIndex(imageIndex);
     setIsImageViewerOpen(true);
   };
 
@@ -2917,6 +2918,68 @@ function App() {
         : 0;
     if (imageCount <= 1) return;
     setCurrentViewerImageIndex((previous) => (previous + 1) % imageCount);
+  };
+
+  const handleMakeViewerImageCover = async () => {
+    if (!viewerItem?.id) return;
+    const currentImages = Array.isArray(viewerItem.imageUrls) && viewerItem.imageUrls.length
+      ? viewerItem.imageUrls
+      : [viewerItem.imageUrl].filter(Boolean);
+    if (currentImages.length <= 1) return;
+    if (currentViewerImageIndex <= 0) return;
+
+    const currentPublicIds = Array.isArray(viewerItem.imagePublicIds) && viewerItem.imagePublicIds.length
+      ? viewerItem.imagePublicIds
+      : [viewerItem.imagePublicId].filter(Boolean);
+
+    const nextImageUrls = [...currentImages];
+    const [coverImage] = nextImageUrls.splice(currentViewerImageIndex, 1);
+    nextImageUrls.unshift(coverImage);
+
+    const nextImagePublicIds = [...currentPublicIds];
+    if (nextImagePublicIds.length > currentViewerImageIndex) {
+      const [coverPublicId] = nextImagePublicIds.splice(currentViewerImageIndex, 1);
+      nextImagePublicIds.unshift(coverPublicId);
+    }
+
+    const optimisticItem = normalizeArtwork({
+      ...viewerItem,
+      imageUrl: nextImageUrls[0] || '',
+      imageUrls: nextImageUrls,
+      imagePublicId: nextImagePublicIds[0] || '',
+      imagePublicIds: nextImagePublicIds,
+    });
+
+    setIsUpdatingViewerCover(true);
+    setInventory((previous) => previous.map((item) => (item.id === optimisticItem.id ? optimisticItem : item)));
+    setCurrentViewerImageIndex(0);
+    try {
+      const response = await fetch(`${API_BASE}/artworks/${viewerItem.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...viewerItem,
+          imageUrl: nextImageUrls[0] || '',
+          imageUrls: nextImageUrls,
+          imagePublicId: nextImagePublicIds[0] || '',
+          imagePublicIds: nextImagePublicIds,
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || 'Failed to update artwork cover image.');
+      }
+
+      const updatedItem = normalizeArtwork(await response.json());
+      setInventory((previous) => previous.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
+      setApiError('');
+    } catch (error) {
+      setInventory((previous) => previous.map((item) => (item.id === viewerItem.id ? viewerItem : item)));
+      setCurrentViewerImageIndex(currentViewerImageIndex);
+      setApiError(error.message || 'Failed to update artwork cover image.');
+    } finally {
+      setIsUpdatingViewerCover(false);
+    }
   };
 
   const handlePrintQr = () => {
@@ -3129,17 +3192,36 @@ function App() {
     }
   };
 
+  const selectedItemGallery = Array.isArray(selectedItem?.imageUrls) && selectedItem.imageUrls.length
+    ? selectedItem.imageUrls
+    : [selectedItem?.imageUrl].filter(Boolean);
+
   const selectedItemDetailsContent = selectedItem ? (
     <>
       <h2>{getArtworkTitle(selectedItem.title)}</h2>
       <p className="totals-subtitle">{getArtworkArtist(selectedItem.artist)}</p>
       {selectedItem.imageUrl ? (
-        <button type="button" className="details-image-btn" onClick={() => handleOpenImageViewer(selectedItem.id)}>
+        <button type="button" className="details-image-btn" onClick={() => handleOpenImageViewer(selectedItem.id, 0)}>
           <img className="details-image" src={selectedItem.imageUrl} alt={getArtworkTitle(selectedItem.title)} />
         </button>
       ) : (
         <div className="details-image placeholder">No Image</div>
       )}
+      {selectedItemGallery.length > 1 ? (
+        <div className="details-gallery-strip">
+          {selectedItemGallery.map((imageUrl, index) => (
+            <button
+              type="button"
+              key={`${imageUrl}-${index}`}
+              className="details-gallery-thumb"
+              onClick={() => handleOpenImageViewer(selectedItem.id, index)}
+              aria-label={`Open image ${index + 1}`}
+            >
+              <img src={imageUrl} alt="" />
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="details-main">
         <div className="details-grid">
           <p>
@@ -4898,6 +4980,9 @@ function App() {
             selectViewerImage={selectViewerImage}
             showPreviousViewerImage={showPreviousViewerImage}
             showNextViewerImage={showNextViewerImage}
+            canManage={canManage}
+            isUpdatingCover={isUpdatingViewerCover}
+            handleMakeViewerImageCover={handleMakeViewerImageCover}
             handleCloseImageViewer={handleCloseImageViewer}
           />
         </Suspense>

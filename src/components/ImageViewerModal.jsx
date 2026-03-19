@@ -4,6 +4,9 @@ export default function ImageViewerModal({
   selectViewerImage,
   showPreviousViewerImage,
   showNextViewerImage,
+  canManage,
+  isUpdatingCover,
+  handleMakeViewerImageCover,
   handleCloseImageViewer,
 }) {
   const imageUrls = Array.isArray(viewerItem?.imageUrls) && viewerItem.imageUrls.length
@@ -17,15 +20,14 @@ export default function ImageViewerModal({
     <div className="modal-backdrop">
       <section className="panel modal image-viewer-modal" onClick={(event) => event.stopPropagation()}>
         <div className="image-viewer-actions">
-          <button type="button" className="ghost" onClick={showPreviousViewerImage} disabled={imageUrls.length <= 1}>
-            Prev
-          </button>
+          {canManage && imageUrls.length > 1 ? (
+            <button type="button" className="ghost" onClick={handleMakeViewerImageCover} disabled={isUpdatingCover}>
+              {isUpdatingCover ? 'Saving...' : 'Make this cover'}
+            </button>
+          ) : null}
           <span className="image-viewer-counter">
             {currentImageIndex + 1} / {imageUrls.length}
           </span>
-          <button type="button" className="ghost" onClick={showNextViewerImage} disabled={imageUrls.length <= 1}>
-            Next
-          </button>
           <button type="button" className="danger" onClick={handleCloseImageViewer}>
             Close
           </button>

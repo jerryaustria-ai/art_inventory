@@ -352,12 +352,13 @@ router.put('/:id', async (req, res) => {
       const retainedImages = normalizedRequestedImages
         .filter(Boolean)
         .filter((item) => !/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(item))
-        .map((item) => ({
-          imageUrl: item,
-          imagePublicId: String(existing.imagePublicIds || []).find((publicId, index) => {
-            return String(existing.imageUrls?.[index] || '') === item;
-          }) || '',
-        }));
+        .map((item) => {
+          const retainedIndex = currentImageUrls.findIndex((currentUrl) => currentUrl === item);
+          return {
+            imageUrl: item,
+            imagePublicId: retainedIndex >= 0 ? currentImagePublicIds[retainedIndex] || '' : '',
+          };
+        });
       const newUploads = await uploadArtworkImages(
         normalizedRequestedImages.filter((item) => /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(item))
       );
