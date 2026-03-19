@@ -147,6 +147,76 @@ router.get('/summary', async (req, res) => {
   }
 });
 
+router.get('/location-summary', async (req, res) => {
+  try {
+    const actorRole = String(req.header('x-actor-role') || '').toLowerCase();
+    const includeInactive = String(req.query.includeInactive || '').toLowerCase() === 'true';
+    const category = String(req.query.category || '').trim();
+    const query =
+      actorRole === 'super admin' && includeInactive ? {} : { isActive: { $ne: false } };
+
+    if (category) {
+      query.category = category;
+    }
+
+    const [items, totals] = await Promise.all([
+      Artwork.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: {
+              $let: {
+                vars: {
+                  trimmedPlace: { $trim: { input: { $ifNull: ['$place', ''] } } },
+                },
+                in: {
+                  $cond: [{ $eq: ['$$trimmedPlace', ''] }, 'Unassigned', '$$trimmedPlace'],
+                },
+              },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            name: '$_id',
+            count: 1,
+          },
+        },
+        { $sort: { count: -1, name: 1 } },
+      ]),
+      Artwork.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: null,
+            totalCount: { $sum: 1 },
+            totalValue: {
+              $sum: {
+                $convert: {
+                  input: '$price',
+                  to: 'double',
+                  onError: 0,
+                  onNull: 0,
+                },
+              },
+            },
+          },
+        },
+      ]),
+    ]);
+
+    return res.json({
+      items,
+      totalCount: Number(totals[0]?.totalCount || 0),
+      totalValue: Number(totals[0]?.totalValue || 0),
+    });
+  } catch {
+    return res.status(500).json({ message: 'Failed to fetch location summary' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const actorRole = String(req.header('x-actor-role') || '').toLowerCase();

@@ -716,6 +716,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState('inventory');
   const [inventory, setInventory] = useState([]);
   const [inventorySummary, setInventorySummary] = useState([]);
+  const [locationSummaries, setLocationSummaries] = useState({});
   const [users, setUsers] = useState([]);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [categories, setCategories] = useState([]);
@@ -952,6 +953,33 @@ function App() {
     }
   };
 
+  const fetchLocationSummary = async (category, activeSession = session) => {
+    try {
+      const isSuperAdmin = activeSession?.role === 'super admin';
+      const params = new URLSearchParams();
+      if (category) params.set('category', category);
+      if (isSuperAdmin) params.set('includeInactive', 'true');
+      const response = await fetch(`${API_BASE}/artworks/location-summary?${params.toString()}`, {
+        headers: {
+          'x-actor-role': activeSession?.role || '',
+        },
+      });
+      if (!response.ok) {
+        return null;
+      }
+      const data = await response.json();
+      return {
+        items: Array.isArray(data?.items)
+          ? data.items.map((item) => [String(item?.name || 'Unassigned'), Number(item?.count || 0)])
+          : [],
+        totalCount: Number(data?.totalCount || 0),
+        totalValue: Number(data?.totalValue || 0),
+      };
+    } catch {
+      return null;
+    }
+  };
+
   const fetchLocationHistory = async (itemId, activeSession = session) => {
     const response = await fetch(`${API_BASE}/artworks/${itemId}/location-history`, {
       headers: {
@@ -1101,6 +1129,7 @@ function App() {
       setIsLoading(false);
       setInventory([]);
       setInventorySummary([]);
+      setLocationSummaries({});
       setInventoryHasMorePages(false);
       setCategories([]);
       setLocations([]);
@@ -1185,6 +1214,10 @@ function App() {
   useEffect(() => {
     setGpsVerificationResult(null);
   }, [selectedItem?.id]);
+
+  useEffect(() => {
+    setLocationSummaries({});
+  }, [inventorySummary]);
 
   useEffect(() => {
     if (!selectedItem?.id) return undefined;
@@ -2349,6 +2382,55 @@ function App() {
       })
       .filter((category) => category.count > 0);
   }, [categoryOptions, inventory, inventorySummary]);
+
+  const paintingSummaryCard = categoryStats.find((item) => item.name === 'Painting') || null;
+  const sculptureSummaryCard = categoryStats.find((item) => item.name === 'Sculpture') || null;
+  const paintingLocationSummary = locationSummaries.Painting || null;
+  const sculptureLocationSummary = locationSummaries.Sculpture || null;
+  const paintingLocationRows = paintingLocationSummary?.items?.length ? paintingLocationSummary.items : paintingOnlyByPlace;
+  const sculptureLocationRows = sculptureLocationSummary?.items?.length ? sculptureLocationSummary.items : sculptureOnlyByPlace;
+  const displayedPaintingCount = Number(paintingLocationSummary?.totalCount ?? paintingSummaryCard?.count ?? totalPaintingCount);
+  const displayedPaintingValue = Number(paintingLocationSummary?.totalValue ?? paintingSummaryCard?.value ?? totalPaintingValue);
+  const displayedSculptureCount = Number(
+    sculptureLocationSummary?.totalCount ?? sculptureSummaryCard?.count ?? totalSculptureCount
+  );
+  const displayedSculptureValue = Number(
+    sculptureLocationSummary?.totalValue ?? sculptureSummaryCard?.value ?? totalSculptureValue
+  );
+
+  useEffect(() => {
+    if (!session) return;
+    if (!isTotalsOpen && !isSculptureTotalsOpen) return;
+
+    const categoriesToLoad = [];
+    if (isTotalsOpen && !locationSummaries.Painting) {
+      categoriesToLoad.push('Painting');
+    }
+    if (isSculptureTotalsOpen && !locationSummaries.Sculpture) {
+      categoriesToLoad.push('Sculpture');
+    }
+    if (!categoriesToLoad.length) return;
+
+    let isActive = true;
+    Promise.all(categoriesToLoad.map((category) => fetchLocationSummary(category, session)))
+      .then((results) => {
+        if (!isActive) return;
+        setLocationSummaries((previous) => {
+          const next = { ...previous };
+          categoriesToLoad.forEach((category, index) => {
+            if (results[index]) {
+              next[category] = results[index];
+            }
+          });
+          return next;
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      isActive = false;
+    };
+  }, [isSculptureTotalsOpen, isTotalsOpen, locationSummaries, session]);
 
   const handleSubmit = async (form) => {
     if (editingItem) {
@@ -4696,10 +4778,10 @@ function App() {
               ×
             </button>
             <h2>Paintings by Location</h2>
-            <p className="totals-subtitle">Total painting inventory: {formatPaintingCount(paintingOnlyItems.length)}</p>
-            <p className="totals-subtitle">Estimated value: {formatPhp(totalPaintingValue)}</p>
+            <p className="totals-subtitle">Total painting inventory: {formatPaintingCount(displayedPaintingCount)}</p>
+            <p className="totals-subtitle">Estimated value: {formatPhp(displayedPaintingValue)}</p>
             <article className="totals-group">
-              {paintingOnlyByPlace.map(([name, count]) => (
+              {paintingLocationRows.map(([name, count]) => (
                 <button
                   type="button"
                   className="totals-row totals-row-button"
@@ -4732,10 +4814,10 @@ function App() {
               ×
             </button>
             <h2>Total Sculpture By Location</h2>
-            <p className="totals-subtitle">Total sculpture inventory: {formatSculptureCount(sculptureOnlyItems.length)}</p>
-            <p className="totals-subtitle">Estimated value: {formatPhp(totalSculptureValue)}</p>
+            <p className="totals-subtitle">Total sculpture inventory: {formatSculptureCount(displayedSculptureCount)}</p>
+            <p className="totals-subtitle">Estimated value: {formatPhp(displayedSculptureValue)}</p>
             <article className="totals-group">
-              {sculptureOnlyByPlace.map(([name, count]) => (
+              {sculptureLocationRows.map(([name, count]) => (
                 <button
                   type="button"
                   className="totals-row totals-row-button"
