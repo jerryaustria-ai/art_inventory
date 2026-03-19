@@ -104,6 +104,52 @@ function getDistanceInMeters(left, right) {
   return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('Failed to read image file.'));
+    };
+    reader.onerror = () => reject(reader.error || new Error('Failed to read image file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImageElement(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Failed to load image.'));
+    image.src = source;
+  });
+}
+
+async function optimizeImageFile(file) {
+  const originalDataUrl = await readFileAsDataUrl(file);
+  const image = await loadImageElement(originalDataUrl);
+  const maxDimension = 1600;
+  const scale = Math.min(1, maxDimension / Math.max(image.width || 1, image.height || 1));
+  const targetWidth = Math.max(1, Math.round((image.width || 1) * scale));
+  const targetHeight = Math.max(1, Math.round((image.height || 1) * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return originalDataUrl;
+  }
+
+  context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+  const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+  return optimizedDataUrl.length < originalDataUrl.length ? optimizedDataUrl : originalDataUrl;
+}
+
 function normalizeArtwork(item) {
   const normalizedImageUrls = Array.isArray(item?.imageUrls)
     ? item.imageUrls.map((value) => String(value || '').trim()).filter(Boolean)
@@ -380,52 +426,45 @@ function InventoryForm({
     event.target.value = '';
     if (!file) return;
 
-    void new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          resolve(reader.result);
-          return;
-        }
-        reject(new Error('Failed to read image file.'));
-      };
-      reader.onerror = () => reject(reader.error || new Error('Failed to read image file.'));
-      reader.readAsDataURL(file);
-    }).then((result) => {
-      const imageDataUrl = String(result || '').trim();
-      if (!imageDataUrl) return;
+    void optimizeImageFile(file)
+      .then((result) => {
+        const imageDataUrl = String(result || '').trim();
+        if (!imageDataUrl) return;
 
-      setForm((previous) => {
-        const currentImageUrls = Array.isArray(previous.imageUrls) ? previous.imageUrls.filter(Boolean) : [];
-        const currentImagePublicIds = Array.isArray(previous.imagePublicIds)
-          ? previous.imagePublicIds.filter((_, index) => Boolean(currentImageUrls[index]))
-          : [];
-        const nextImageUrls = [...currentImageUrls, imageDataUrl];
-        const nextImagePublicIds = [...currentImagePublicIds];
-        while (nextImagePublicIds.length < currentImageUrls.length) {
+        setForm((previous) => {
+          const currentImageUrls = Array.isArray(previous.imageUrls) ? previous.imageUrls.filter(Boolean) : [];
+          const currentImagePublicIds = Array.isArray(previous.imagePublicIds)
+            ? previous.imagePublicIds.filter((_, index) => Boolean(currentImageUrls[index]))
+            : [];
+          const nextImageUrls = [...currentImageUrls, imageDataUrl];
+          const nextImagePublicIds = [...currentImagePublicIds];
+          while (nextImagePublicIds.length < currentImageUrls.length) {
+            nextImagePublicIds.push('');
+          }
           nextImagePublicIds.push('');
-        }
-        nextImagePublicIds.push('');
 
-        return {
-          ...previous,
-          imageUrl: nextImageUrls[0] || '',
-          imageUrls: nextImageUrls,
-          imagePublicId: nextImagePublicIds[0] || '',
-          imagePublicIds: nextImagePublicIds,
-        };
-      });
-
-      void computeVisualFingerprintFromFile(file)
-        .then((fingerprint) => {
-          setForm((previous) => {
-            return shouldUpdateFingerprint ? { ...previous, imageFingerprint: fingerprint } : previous;
-          });
-        })
-        .catch(() => {
-          setForm((previous) => previous);
+          return {
+            ...previous,
+            imageUrl: nextImageUrls[0] || '',
+            imageUrls: nextImageUrls,
+            imagePublicId: nextImagePublicIds[0] || '',
+            imagePublicIds: nextImagePublicIds,
+          };
         });
-    });
+
+        void computeVisualFingerprintFromFile(file)
+          .then((fingerprint) => {
+            setForm((previous) => {
+              return shouldUpdateFingerprint ? { ...previous, imageFingerprint: fingerprint } : previous;
+            });
+          })
+          .catch(() => {
+            setForm((previous) => previous);
+          });
+      })
+      .catch(() => {
+        setFormError('Failed to read the selected image.');
+      });
   };
 
   const removeImageAtIndex = (indexToRemove) => {
