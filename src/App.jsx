@@ -150,6 +150,25 @@ async function optimizeImageFile(file) {
   return optimizedDataUrl.length < originalDataUrl.length ? optimizedDataUrl : originalDataUrl;
 }
 
+function getCloudinaryCardImageUrl(rawUrl) {
+  const value = String(rawUrl || '').trim();
+  if (!value || value.startsWith('data:image/')) return value;
+
+  try {
+    const parsed = new URL(value);
+    if (!parsed.hostname.includes('cloudinary.com')) return value;
+
+    const uploadMarker = '/upload/';
+    const markerIndex = parsed.pathname.indexOf(uploadMarker);
+    if (markerIndex === -1) return value;
+
+    const transformedPath = `${parsed.pathname.slice(0, markerIndex + uploadMarker.length)}f_auto,q_auto,c_fill,w_480,h_480/${parsed.pathname.slice(markerIndex + uploadMarker.length)}`;
+    return `${parsed.origin}${transformedPath}${parsed.search}`;
+  } catch {
+    return value;
+  }
+}
+
 function normalizeArtwork(item) {
   const normalizedImageUrls = Array.isArray(item?.imageUrls)
     ? item.imageUrls.map((value) => String(value || '').trim()).filter(Boolean)
@@ -163,6 +182,7 @@ function normalizeArtwork(item) {
     id: item._id,
     inventoryId: item.inventoryId || '',
     imageUrl: item.imageUrl || normalizedImageUrls[0] || '',
+    cardImageUrl: getCloudinaryCardImageUrl(item.imageUrl || normalizedImageUrls[0] || ''),
     imageUrls: normalizedImageUrls.length
       ? normalizedImageUrls
       : [String(item.imageUrl || '').trim()].filter(Boolean),
@@ -4654,7 +4674,7 @@ function App() {
                 onClick={() => handleOpenSelectedItem(item.id)}
               >
                 {item.imageUrl ? (
-                  <img src={item.imageUrl} alt={getArtworkTitle(item.title)} />
+                  <img src={item.cardImageUrl || item.imageUrl} alt={getArtworkTitle(item.title)} />
                 ) : (
                   <div className="placeholder">No Image</div>
                 )}
