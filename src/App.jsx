@@ -57,6 +57,8 @@ const blankForm = {
   price: '',
   notes: '',
   imageUrl: '',
+  imageUrls: [],
+  imagePublicIds: [],
   imageFingerprint: '',
 };
 
@@ -103,11 +105,25 @@ function getDistanceInMeters(left, right) {
 }
 
 function normalizeArtwork(item) {
+  const normalizedImageUrls = Array.isArray(item?.imageUrls)
+    ? item.imageUrls.map((value) => String(value || '').trim()).filter(Boolean)
+    : [];
+  const normalizedImagePublicIds = Array.isArray(item?.imagePublicIds)
+    ? item.imagePublicIds.map((value) => String(value || '').trim()).filter(Boolean)
+    : [];
+
   return {
     ...item,
     id: item._id,
     inventoryId: item.inventoryId || '',
+    imageUrl: item.imageUrl || normalizedImageUrls[0] || '',
+    imageUrls: normalizedImageUrls.length
+      ? normalizedImageUrls
+      : [String(item.imageUrl || '').trim()].filter(Boolean),
     imagePublicId: item.imagePublicId || '',
+    imagePublicIds: normalizedImagePublicIds.length
+      ? normalizedImagePublicIds
+      : [String(item.imagePublicId || '').trim()].filter(Boolean),
     imageFingerprint: item.imageFingerprint || '',
     category: item.category || '',
     place: item.place || '',
@@ -358,10 +374,10 @@ function InventoryForm({
   };
 
   const handleImageUpload = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
 
-    void computeVisualFingerprintFromFile(file)
+    void computeVisualFingerprintFromFile(files[0])
       .then((fingerprint) => {
         setForm((previous) => ({ ...previous, imageFingerprint: fingerprint }));
       })
@@ -369,17 +385,42 @@ function InventoryForm({
         setForm((previous) => ({ ...previous, imageFingerprint: '' }));
       });
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setForm((previous) => ({ ...previous, imageUrl: reader.result }));
-      }
-    };
-    reader.readAsDataURL(file);
+    void Promise.all(
+      files.map(
+        (file) =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              if (typeof reader.result === 'string') {
+                resolve(reader.result);
+                return;
+              }
+              reject(new Error('Failed to read image file.'));
+            };
+            reader.onerror = () => reject(reader.error || new Error('Failed to read image file.'));
+            reader.readAsDataURL(file);
+          })
+      )
+    ).then((results) => {
+      const nextImageUrls = results.filter(Boolean);
+      setForm((previous) => ({
+        ...previous,
+        imageUrl: nextImageUrls[0] || '',
+        imageUrls: nextImageUrls,
+        imagePublicIds: [],
+      }));
+    });
   };
 
   const clearImage = () => {
-    setForm((previous) => ({ ...previous, imageUrl: '', imagePublicId: '', imageFingerprint: '' }));
+    setForm((previous) => ({
+      ...previous,
+      imageUrl: '',
+      imageUrls: [],
+      imagePublicId: '',
+      imagePublicIds: [],
+      imageFingerprint: '',
+    }));
   };
 
   return (
@@ -452,18 +493,25 @@ function InventoryForm({
         <input name="price" value={form.price} onChange={handleChange} type="number" min="0" step="0.01" />
       </label>
       <label>
-        Upload Image
-        <input type="file" accept="image/*" onChange={handleImageUpload} />
+        Upload Images
+        <input type="file" accept="image/*" multiple onChange={handleImageUpload} />
       </label>
       <label className="full-width">
         Notes
         <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} />
       </label>
-      {form.imageUrl ? (
+      {form.imageUrls?.length ? (
         <div className="full-width image-preview-block">
-          <img src={form.imageUrl} alt="Selected artwork" className="image-preview" />
+          {form.imageUrls.map((imageUrl, index) => (
+            <img
+              key={`${imageUrl}-${index}`}
+              src={imageUrl}
+              alt={`Selected artwork ${index + 1}`}
+              className="image-preview"
+            />
+          ))}
           <button type="button" className="ghost" onClick={clearImage}>
-            Remove Image
+            Remove Images
           </button>
         </div>
       ) : null}
@@ -796,12 +844,8 @@ function App() {
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth <= 700 : false
   );
-  const [imageZoom, setImageZoom] = useState(1);
-  const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
+  const [currentViewerImageIndex, setCurrentViewerImageIndex] = useState(0);
   const [expandedCardIds, setExpandedCardIds] = useState([]);
-  const panStartRef = useRef({ x: 0, y: 0 });
-  const panOriginRef = useRef({ x: 0, y: 0 });
-  const isPanningRef = useRef(false);
   const inventoryScrollRestoreRef = useRef(null);
   const html5QrRef = useRef(null);
   const hasHandledScanRef = useRef(false);
@@ -2837,40 +2881,42 @@ function App() {
       setSelectedId('');
     }
     setViewerId(id);
-    setImageZoom(1);
-    setImagePan({ x: 0, y: 0 });
+    setCurrentViewerImageIndex(0);
     setIsImageViewerOpen(true);
   };
 
   const handleCloseImageViewer = () => {
     setIsImageViewerOpen(false);
     setViewerId('');
-    setImageZoom(1);
-    setImagePan({ x: 0, y: 0 });
-    isPanningRef.current = false;
+    setCurrentViewerImageIndex(0);
     if (viewerReturnId) {
       setSelectedId(viewerReturnId);
       setViewerReturnId('');
     }
   };
 
-  const zoomInImage = () => {
-    setImageZoom((prev) => Math.min(prev + 0.25, 4));
+  const selectViewerImage = (index) => {
+    setCurrentViewerImageIndex(index);
   };
 
-  const zoomOutImage = () => {
-    setImageZoom((prev) => {
-      const next = Math.max(prev - 0.25, 1);
-      if (next === 1) {
-        setImagePan({ x: 0, y: 0 });
-      }
-      return next;
-    });
+  const showPreviousViewerImage = () => {
+    const imageCount = Array.isArray(viewerItem?.imageUrls) && viewerItem.imageUrls.length
+      ? viewerItem.imageUrls.length
+      : viewerItem?.imageUrl
+        ? 1
+        : 0;
+    if (imageCount <= 1) return;
+    setCurrentViewerImageIndex((previous) => (previous - 1 + imageCount) % imageCount);
   };
 
-  const resetImageView = () => {
-    setImageZoom(1);
-    setImagePan({ x: 0, y: 0 });
+  const showNextViewerImage = () => {
+    const imageCount = Array.isArray(viewerItem?.imageUrls) && viewerItem.imageUrls.length
+      ? viewerItem.imageUrls.length
+      : viewerItem?.imageUrl
+        ? 1
+        : 0;
+    if (imageCount <= 1) return;
+    setCurrentViewerImageIndex((previous) => (previous + 1) % imageCount);
   };
 
   const handlePrintQr = () => {
@@ -3368,30 +3414,6 @@ function App() {
       </div>
     </article>
   );
-
-  const handleImagePointerDown = (event) => {
-    if (imageZoom <= 1) return;
-    isPanningRef.current = true;
-    panStartRef.current = { x: event.clientX, y: event.clientY };
-    panOriginRef.current = { ...imagePan };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const handleImagePointerMove = (event) => {
-    if (!isPanningRef.current || imageZoom <= 1) return;
-    const deltaX = event.clientX - panStartRef.current.x;
-    const deltaY = event.clientY - panStartRef.current.y;
-    setImagePan({
-      x: panOriginRef.current.x + deltaX,
-      y: panOriginRef.current.y + deltaY,
-    });
-  };
-
-  const handleImagePointerUp = (event) => {
-    if (!isPanningRef.current) return;
-    isPanningRef.current = false;
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  };
 
   const stopQrScanner = async () => {
     const scanner = html5QrRef.current;
@@ -4872,15 +4894,11 @@ function App() {
         >
           <LazyImageViewerModal
             viewerItem={viewerItem}
-            imageZoom={imageZoom}
-            imagePan={imagePan}
-            zoomInImage={zoomInImage}
-            zoomOutImage={zoomOutImage}
-            resetImageView={resetImageView}
+            currentImageIndex={currentViewerImageIndex}
+            selectViewerImage={selectViewerImage}
+            showPreviousViewerImage={showPreviousViewerImage}
+            showNextViewerImage={showNextViewerImage}
             handleCloseImageViewer={handleCloseImageViewer}
-            handleImagePointerDown={handleImagePointerDown}
-            handleImagePointerMove={handleImagePointerMove}
-            handleImagePointerUp={handleImagePointerUp}
           />
         </Suspense>
       ) : null}

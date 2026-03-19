@@ -50,7 +50,22 @@ function sanitizeArtworkPayload(body = {}) {
   const payload = { ...body };
   delete payload.inventoryId;
   payload.imageFingerprint = String(payload.imageFingerprint || '').trim();
+  payload.imageUrls = Array.isArray(payload.imageUrls)
+    ? payload.imageUrls.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  payload.imagePublicIds = Array.isArray(payload.imagePublicIds)
+    ? payload.imagePublicIds.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
   return payload;
+}
+
+async function uploadArtworkImages(values = []) {
+  const entries = Array.isArray(values)
+    ? values.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+
+  const uploaded = await Promise.all(entries.map((item) => uploadArtworkImage(item)));
+  return uploaded.filter((item) => item.imageUrl);
 }
 
 router.get('/', async (req, res) => {
@@ -292,10 +307,15 @@ router.post('/visual-search', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const payload = sanitizeArtworkPayload(req.body);
-    const uploadedImage = await uploadArtworkImage(payload.imageUrl);
-    payload.imageUrl = uploadedImage.imageUrl;
-    payload.imagePublicId = uploadedImage.imagePublicId;
-    if (!payload.imageUrl) {
+    const requestedImages = payload.imageUrls.length
+      ? payload.imageUrls
+      : [String(payload.imageUrl || '').trim()].filter(Boolean);
+    const uploadedImages = await uploadArtworkImages(requestedImages);
+    payload.imageUrls = uploadedImages.map((item) => item.imageUrl);
+    payload.imagePublicIds = uploadedImages.map((item) => item.imagePublicId).filter(Boolean);
+    payload.imageUrl = payload.imageUrls[0] || '';
+    payload.imagePublicId = payload.imagePublicIds[0] || '';
+    if (!payload.imageUrls.length) {
       payload.imageFingerprint = '';
     }
     const artwork = await Artwork.create(payload);
@@ -314,23 +334,63 @@ router.put('/:id', async (req, res) => {
     }
 
     const payload = sanitizeArtworkPayload(req.body);
-    const nextImageUrl = String(payload.imageUrl ?? '').trim();
-    const currentImageUrl = String(existing.imageUrl || '').trim();
-    const currentImagePublicId = String(existing.imagePublicId || '').trim();
-    const isReplacingImage = Boolean(nextImageUrl) && nextImageUrl !== currentImageUrl;
-    const isRemovingImage = !nextImageUrl && Boolean(currentImageUrl);
+    const currentImageUrls = Array.isArray(existing.imageUrls) && existing.imageUrls.length
+      ? existing.imageUrls.map((item) => String(item || '').trim()).filter(Boolean)
+      : [String(existing.imageUrl || '').trim()].filter(Boolean);
+    const currentImagePublicIds = Array.isArray(existing.imagePublicIds) && existing.imagePublicIds.length
+      ? existing.imagePublicIds.map((item) => String(item || '').trim()).filter(Boolean)
+      : [String(existing.imagePublicId || '').trim()].filter(Boolean);
+    const requestedImages = payload.imageUrls.length
+      ? payload.imageUrls
+      : [String(payload.imageUrl ?? '').trim()].filter(Boolean);
+    const normalizedRequestedImages = requestedImages.map((item) => String(item || '').trim()).filter(Boolean);
+    const galleryChanged =
+      normalizedRequestedImages.length !== currentImageUrls.length ||
+      normalizedRequestedImages.some((item, index) => item !== currentImageUrls[index]);
 
-    if (isReplacingImage) {
-      const uploadedImage = await uploadArtworkImage(nextImageUrl);
-      payload.imageUrl = uploadedImage.imageUrl;
-      payload.imagePublicId = uploadedImage.imagePublicId;
-    } else if (isRemovingImage) {
-      payload.imageUrl = '';
-      payload.imagePublicId = '';
-      payload.imageFingerprint = '';
+    if (galleryChanged) {
+      const retainedImages = normalizedRequestedImages
+        .filter(Boolean)
+        .filter((item) => !/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(item))
+        .map((item) => ({
+          imageUrl: item,
+          imagePublicId: String(existing.imagePublicIds || []).find((publicId, index) => {
+            return String(existing.imageUrls?.[index] || '') === item;
+          }) || '',
+        }));
+      const newUploads = await uploadArtworkImages(
+        normalizedRequestedImages.filter((item) => /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(item))
+      );
+      const nextImages = [...retainedImages, ...newUploads].filter((item) => item.imageUrl);
+      const nextPublicIds = new Set(nextImages.map((item) => String(item.imagePublicId || '').trim()).filter(Boolean));
+      const removedImages = currentImagePublicIds
+        .map((publicId, index) => ({
+          imagePublicId: publicId,
+          imageUrl: currentImageUrls[index] || '',
+        }))
+        .filter((item) => item.imagePublicId && !nextPublicIds.has(item.imagePublicId));
+
+      payload.imageUrls = nextImages.map((item) => item.imageUrl);
+      payload.imagePublicIds = nextImages.map((item) => item.imagePublicId).filter(Boolean);
+      payload.imageUrl = payload.imageUrls[0] || '';
+      payload.imagePublicId = payload.imagePublicIds[0] || '';
+      if (!payload.imageUrls.length) {
+        payload.imageFingerprint = '';
+      }
+
+      await Promise.all(
+        removedImages.map((item) =>
+          deleteArtworkImage({
+            imagePublicId: item.imagePublicId,
+            imageUrl: item.imageUrl,
+          })
+        )
+      );
     } else {
-      payload.imageUrl = currentImageUrl;
-      payload.imagePublicId = currentImagePublicId;
+      payload.imageUrls = currentImageUrls;
+      payload.imagePublicIds = currentImagePublicIds;
+      payload.imageUrl = currentImageUrls[0] || '';
+      payload.imagePublicId = currentImagePublicIds[0] || '';
       payload.imageFingerprint = String(existing.imageFingerprint || '').trim();
     }
 
@@ -342,13 +402,6 @@ router.put('/:id', async (req, res) => {
         runValidators: true,
       }
     );
-
-    if (isReplacingImage || isRemovingImage) {
-      await deleteArtworkImage({
-        imagePublicId: currentImagePublicId,
-        imageUrl: currentImageUrl,
-      });
-    }
 
     await ensureInventoryId(updated);
     res.json(updated);
