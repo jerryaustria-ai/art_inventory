@@ -1,4 +1,4 @@
-const CACHE_NAME = 'artworkz-pwa-v1';
+const CACHE_NAME = 'artworkz-pwa-v2';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -44,9 +44,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
+    fetch(request)
+      .then((response) => {
         if (!response || response.status !== 200 || response.type !== 'basic') {
           return response;
         }
@@ -57,7 +56,7 @@ self.addEventListener('fetch', (event) => {
         });
 
         return response;
-      });
-    })
+      })
+      .catch(() => caches.match(request))
   );
 });
