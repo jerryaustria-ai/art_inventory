@@ -388,7 +388,9 @@ function InventoryForm({
 }) {
   const [form, setForm] = useState(editingItem || blankForm);
   const [formError, setFormError] = useState('');
+  const [invalidFieldName, setInvalidFieldName] = useState('');
   const thumbnailInputId = editingItem ? `artwork-thumbnail-${editingItem._id || 'edit'}` : 'artwork-thumbnail-new';
+  const categoryFieldRef = useRef(null);
   const placeOptions = useMemo(() => {
     const values = new Set([
       ...locations.map((location) => String(location?.name || '').trim()).filter(Boolean),
@@ -400,19 +402,34 @@ function InventoryForm({
   useEffect(() => {
     setForm(editingItem || blankForm);
     setFormError('');
+    setInvalidFieldName('');
   }, [editingItem]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
+    if (invalidFieldName === name) {
+      setInvalidFieldName('');
+      setFormError('');
+    }
     setForm((previous) => ({ ...previous, [name]: value }));
+  };
+
+  const focusField = (fieldName) => {
+    if (fieldName === 'category' && categoryFieldRef.current) {
+      categoryFieldRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      categoryFieldRef.current.focus();
+    }
   };
 
   const handleSubmit = (event) => {
     event.preventDefault();
     if (!form.category.trim()) {
+      setInvalidFieldName('category');
       setFormError('Please fill in required field: Artwork Category.');
+      focusField('category');
       return;
     }
+    setInvalidFieldName('');
     setFormError('');
     onSubmit(form);
     if (!editingItem) {
@@ -521,7 +538,14 @@ function InventoryForm({
       {!formError && submitError ? <p className="form-error">{submitError}</p> : null}
       <label>
         Artwork Category *
-        <select name="category" value={form.category} onChange={handleChange} required>
+        <select
+          ref={categoryFieldRef}
+          name="category"
+          value={form.category}
+          onChange={handleChange}
+          className={invalidFieldName === 'category' ? 'field-error' : ''}
+          required
+        >
           <option value="">Select category</option>
           {categories.map((category) => (
             <option key={category} value={category}>
