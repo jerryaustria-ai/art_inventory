@@ -342,6 +342,7 @@ function InventoryForm({
 }) {
   const [form, setForm] = useState(editingItem || blankForm);
   const [formError, setFormError] = useState('');
+  const thumbnailInputId = editingItem ? `artwork-thumbnail-${editingItem._id || 'edit'}` : 'artwork-thumbnail-new';
   const placeOptions = useMemo(() => {
     const values = new Set([
       ...locations.map((location) => String(location?.name || '').trim()).filter(Boolean),
@@ -374,53 +375,104 @@ function InventoryForm({
   };
 
   const handleImageUpload = (event) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
+    const file = event.target.files?.[0];
+    const shouldUpdateFingerprint = !Array.isArray(form.imageUrls) || form.imageUrls.length === 0;
+    event.target.value = '';
+    if (!file) return;
 
-    void computeVisualFingerprintFromFile(files[0])
-      .then((fingerprint) => {
-        setForm((previous) => ({ ...previous, imageFingerprint: fingerprint }));
-      })
-      .catch(() => {
-        setForm((previous) => ({ ...previous, imageFingerprint: '' }));
+    void new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+          return;
+        }
+        reject(new Error('Failed to read image file.'));
+      };
+      reader.onerror = () => reject(reader.error || new Error('Failed to read image file.'));
+      reader.readAsDataURL(file);
+    }).then((result) => {
+      const imageDataUrl = String(result || '').trim();
+      if (!imageDataUrl) return;
+
+      setForm((previous) => {
+        const currentImageUrls = Array.isArray(previous.imageUrls) ? previous.imageUrls.filter(Boolean) : [];
+        const currentImagePublicIds = Array.isArray(previous.imagePublicIds)
+          ? previous.imagePublicIds.filter((_, index) => Boolean(currentImageUrls[index]))
+          : [];
+        const nextImageUrls = [...currentImageUrls, imageDataUrl];
+        const nextImagePublicIds = [...currentImagePublicIds];
+        while (nextImagePublicIds.length < currentImageUrls.length) {
+          nextImagePublicIds.push('');
+        }
+        nextImagePublicIds.push('');
+
+        return {
+          ...previous,
+          imageUrl: nextImageUrls[0] || '',
+          imageUrls: nextImageUrls,
+          imagePublicId: nextImagePublicIds[0] || '',
+          imagePublicIds: nextImagePublicIds,
+        };
       });
 
-    void Promise.all(
-      files.map(
-        (file) =>
-          new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              if (typeof reader.result === 'string') {
-                resolve(reader.result);
-                return;
-              }
-              reject(new Error('Failed to read image file.'));
-            };
-            reader.onerror = () => reject(reader.error || new Error('Failed to read image file.'));
-            reader.readAsDataURL(file);
-          })
-      )
-    ).then((results) => {
-      const nextImageUrls = results.filter(Boolean);
-      setForm((previous) => ({
-        ...previous,
-        imageUrl: nextImageUrls[0] || '',
-        imageUrls: nextImageUrls,
-        imagePublicIds: [],
-      }));
+      void computeVisualFingerprintFromFile(file)
+        .then((fingerprint) => {
+          setForm((previous) => {
+            return shouldUpdateFingerprint ? { ...previous, imageFingerprint: fingerprint } : previous;
+          });
+        })
+        .catch(() => {
+          setForm((previous) => previous);
+        });
     });
   };
 
-  const clearImage = () => {
-    setForm((previous) => ({
-      ...previous,
-      imageUrl: '',
-      imageUrls: [],
-      imagePublicId: '',
-      imagePublicIds: [],
-      imageFingerprint: '',
-    }));
+  const removeImageAtIndex = (indexToRemove) => {
+    setForm((previous) => {
+      const currentImageUrls = Array.isArray(previous.imageUrls) ? previous.imageUrls.filter(Boolean) : [];
+      const currentImagePublicIds = Array.isArray(previous.imagePublicIds) ? previous.imagePublicIds : [];
+      const nextImageUrls = currentImageUrls.filter((_, index) => index !== indexToRemove);
+      const nextImagePublicIds = currentImagePublicIds.filter((_, index) => index !== indexToRemove);
+
+      return {
+        ...previous,
+        imageUrl: nextImageUrls[0] || '',
+        imageUrls: nextImageUrls,
+        imagePublicId: nextImagePublicIds[0] || '',
+        imagePublicIds: nextImagePublicIds,
+        imageFingerprint: nextImageUrls.length ? previous.imageFingerprint : '',
+      };
+    });
+  };
+
+  const makeImageCoverAtIndex = (indexToPromote) => {
+    if (indexToPromote <= 0) return;
+
+    setForm((previous) => {
+      const currentImageUrls = Array.isArray(previous.imageUrls) ? previous.imageUrls.filter(Boolean) : [];
+      const currentImagePublicIds = Array.isArray(previous.imagePublicIds) ? previous.imagePublicIds : [];
+      if (indexToPromote >= currentImageUrls.length) return previous;
+
+      const nextImageUrls = [...currentImageUrls];
+      const [promotedImageUrl] = nextImageUrls.splice(indexToPromote, 1);
+      nextImageUrls.unshift(promotedImageUrl);
+
+      const nextImagePublicIds = [...currentImagePublicIds];
+      while (nextImagePublicIds.length < currentImageUrls.length) {
+        nextImagePublicIds.push('');
+      }
+      const [promotedImagePublicId] = nextImagePublicIds.splice(indexToPromote, 1);
+      nextImagePublicIds.unshift(promotedImagePublicId || '');
+
+      return {
+        ...previous,
+        imageUrl: nextImageUrls[0] || '',
+        imageUrls: nextImageUrls,
+        imagePublicId: nextImagePublicIds[0] || '',
+        imagePublicIds: nextImagePublicIds,
+      };
+    });
   };
 
   return (
@@ -492,29 +544,53 @@ function InventoryForm({
         Price (PHP)
         <input name="price" value={form.price} onChange={handleChange} type="number" min="0" step="0.01" />
       </label>
-      <label>
-        Upload Images
-        <input type="file" accept="image/*" multiple onChange={handleImageUpload} />
-      </label>
       <label className="full-width">
         Notes
         <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} />
       </label>
-      {form.imageUrls?.length ? (
-        <div className="full-width image-preview-block">
-          {form.imageUrls.map((imageUrl, index) => (
-            <img
-              key={`${imageUrl}-${index}`}
-              src={imageUrl}
-              alt={`Selected artwork ${index + 1}`}
-              className="image-preview"
-            />
+      <div className="full-width upload-thumbnail-field">
+        <span>Upload Thumbnail</span>
+        <input
+          id={thumbnailInputId}
+          className="upload-thumbnail-input"
+          type="file"
+          accept="image/*"
+          onChange={handleImageUpload}
+        />
+        <div className="image-upload-grid">
+          {(form.imageUrls || []).map((imageUrl, index) => (
+            <div key={`${imageUrl}-${index}`} className="upload-thumbnail-dropzone has-image">
+              <img
+                src={imageUrl}
+                alt={`Selected artwork ${index + 1}`}
+                className="upload-thumbnail-preview"
+              />
+              {index === 0 ? <span className="upload-thumbnail-badge">Cover</span> : null}
+              {index > 0 ? (
+                <button
+                  type="button"
+                  className="upload-thumbnail-make-cover"
+                  onClick={() => makeImageCoverAtIndex(index)}
+                >
+                  Make Cover
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="upload-thumbnail-remove"
+                onClick={() => removeImageAtIndex(index)}
+                aria-label={`Remove image ${index + 1}`}
+              >
+                ×
+              </button>
+            </div>
           ))}
-          <button type="button" className="ghost" onClick={clearImage}>
-            Remove Images
-          </button>
+          <label htmlFor={thumbnailInputId} className="upload-thumbnail-dropzone upload-thumbnail-add">
+            <span className="upload-thumbnail-plus">+</span>
+            <span className="upload-thumbnail-copy">Add image</span>
+          </label>
         </div>
-      ) : null}
+      </div>
       <div className="actions full-width">
         <button type="submit">{editingItem ? 'Update Painting' : 'Save'}</button>
         <button type="button" className="ghost" onClick={onCancel}>

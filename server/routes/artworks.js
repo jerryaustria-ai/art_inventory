@@ -550,10 +550,21 @@ router.delete('/:id/permanent', async (req, res) => {
       return res.status(404).json({ message: 'Artwork not found' });
     }
 
-    await deleteArtworkImage({
-      imagePublicId: deleted.imagePublicId,
-      imageUrl: deleted.imageUrl,
-    });
+    const deletedImageUrls = Array.isArray(deleted.imageUrls) && deleted.imageUrls.length
+      ? deleted.imageUrls.map((item) => String(item || '').trim()).filter(Boolean)
+      : [String(deleted.imageUrl || '').trim()].filter(Boolean);
+    const deletedImagePublicIds = Array.isArray(deleted.imagePublicIds) && deleted.imagePublicIds.length
+      ? deleted.imagePublicIds.map((item) => String(item || '').trim()).filter(Boolean)
+      : [String(deleted.imagePublicId || '').trim()].filter(Boolean);
+
+    await Promise.all(
+      deletedImageUrls.map((imageUrl, index) =>
+        deleteArtworkImage({
+          imagePublicId: deletedImagePublicIds[index] || '',
+          imageUrl,
+        })
+      )
+    );
 
     await writeAuditLog({
       action: 'inventory.delete_permanent',
