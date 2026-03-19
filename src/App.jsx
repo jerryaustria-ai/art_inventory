@@ -1054,16 +1054,6 @@ function App() {
     }
 
     const data = await response.json();
-    if (Array.isArray(data)) {
-      const normalizedItems = data.map(normalizeArtwork);
-      const pagedItems = normalizedItems.slice(offset, offset + limit);
-      return {
-        items: pagedItems,
-        hasMore: offset + pagedItems.length < normalizedItems.length,
-        total: normalizedItems.length,
-      };
-    }
-
     return {
       items: Array.isArray(data?.items) ? data.items.map(normalizeArtwork) : [],
       hasMore: Boolean(data?.hasMore),
@@ -1300,15 +1290,16 @@ function App() {
 
     const loadAppData = async () => {
       try {
-        const [page, summary] = await Promise.all([
-          fetchInventoryPage({ offset: 0, limit: INVENTORY_PAGE_SIZE }, session),
-          fetchInventorySummary(session),
-        ]);
+        const page = await fetchInventoryPage({ offset: 0, limit: INVENTORY_PAGE_SIZE }, session);
         if (!isMounted) return;
         setInventory(page.items);
-        setInventorySummary(summary);
         setInventoryHasMorePages(page.hasMore);
         setApiError('');
+        void fetchInventorySummary(session)
+          .then((summary) => {
+            if (isMounted) setInventorySummary(summary);
+          })
+          .catch(() => {});
         void fetchCategories(false, { silent: true });
         void fetchLocations({ silent: true });
       } catch {
@@ -1477,6 +1468,9 @@ function App() {
 
   useEffect(() => {
     if (!inventory.length) return undefined;
+    if (isLoading) return undefined;
+    if (currentPage !== 'inventory') return undefined;
+    if (isQrScannerOpen || isVisualSearchOpen || isInventoryMutating) return undefined;
 
     const candidates = inventory.filter(
       (item) =>
@@ -1489,6 +1483,8 @@ function App() {
     if (!candidates.length) return undefined;
 
     let isCancelled = false;
+    let idleHandle = null;
+    let timeoutId = null;
     const nextCandidate = candidates[0];
     syncingFingerprintIdsRef.current.add(nextCandidate.id);
 
@@ -1506,12 +1502,26 @@ function App() {
       }
     };
 
-    void syncFingerprint();
+    const scheduleSync = () => {
+      void syncFingerprint();
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      idleHandle = window.requestIdleCallback(scheduleSync, { timeout: 2000 });
+    } else {
+      timeoutId = window.setTimeout(scheduleSync, 1200);
+    }
 
     return () => {
       isCancelled = true;
+      if (typeof window !== 'undefined' && idleHandle !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleHandle);
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
     };
-  }, [inventory]);
+  }, [currentPage, inventory, isInventoryMutating, isLoading, isQrScannerOpen, isVisualSearchOpen]);
 
   useEffect(() => {
     if (!isMobileDetailsPage || !selectedItem?.id) return;
