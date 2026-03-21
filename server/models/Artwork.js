@@ -28,6 +28,11 @@ const artworkSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+artworkSchema.index({ createdAt: -1 });
+artworkSchema.index({ isActive: 1, createdAt: -1 });
+artworkSchema.index({ category: 1, isActive: 1 });
+artworkSchema.index({ place: 1, isActive: 1 });
+
 const Artwork = mongoose.model('Artwork', artworkSchema);
 
 export default Artwork;

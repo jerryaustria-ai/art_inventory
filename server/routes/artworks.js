@@ -81,22 +81,21 @@ router.get('/', async (req, res) => {
       actorRole === 'super admin' && includeInactive ? {} : { isActive: { $ne: false } };
 
     if (hasPaging) {
-      const [items, total] = await Promise.all([
-        Artwork.find(query)
-          .sort({ createdAt: -1 })
-          .skip(offset)
-          .limit(limit)
-          .select('-imageFingerprint -imagePublicId')
-          .lean(),
-        Artwork.countDocuments(query),
-      ]);
+      const pagedItems = await Artwork.find(query)
+        .sort({ createdAt: -1 })
+        .skip(offset)
+        .limit(limit + 1)
+        .select('-imageFingerprint -imagePublicId')
+        .lean();
+      const hasMore = pagedItems.length > limit;
+      const items = hasMore ? pagedItems.slice(0, limit) : pagedItems;
 
       return res.json({
         items,
-        total,
         offset,
         limit,
-        hasMore: offset + items.length < total,
+        total: null,
+        hasMore,
       });
     }
 
