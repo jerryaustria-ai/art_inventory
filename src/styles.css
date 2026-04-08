@@ -1791,6 +1791,43 @@ button.danger {
   margin-bottom: 0;
 }
 
+.totals-row-main {
+  flex: 1;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.totals-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.totals-row-print {
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: var(--accent-blue);
+}
+
+.totals-row-print svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.totals-row-print:hover,
+.totals-row-print:focus-visible {
+  background: var(--accent-blue);
+  color: #ffffff;
+}
+
 .totals-modal .actions {
   justify-content: flex-end;
   margin-top: 0.25rem;

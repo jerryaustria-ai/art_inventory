@@ -88,6 +88,13 @@ function getArtworkArtist(value) {
   return String(value || '').trim() || 'Artist not set';
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
 function toRadians(value) {
   return (value * Math.PI) / 180;
 }
@@ -3163,14 +3170,8 @@ function App() {
       return;
     }
 
-    const safeTitle = String(getArtworkTitle(selectedItem.title))
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
-    const safeId = String(getDisplayItemId(selectedItem) || '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
+    const safeTitle = escapeHtml(getArtworkTitle(selectedItem.title));
+    const safeId = escapeHtml(getDisplayItemId(selectedItem) || '');
 
     printWindow.document.write(`
       <!doctype html>
@@ -3237,6 +3238,139 @@ function App() {
       </html>
     `);
     printWindow.document.close();
+  };
+
+  const handlePrintItemsByLocation = async (place, category) => {
+    const normalizedPlace = String(place || '').trim();
+    const normalizedCategory = String(category || '').trim();
+    if (!normalizedPlace || !normalizedCategory) return;
+
+    try {
+      const allItems = await fetchInventory(session);
+      const matchingItems = allItems.filter((item) => {
+        const itemPlace = String(item.place || '').trim() || 'Unassigned';
+        return item.category === normalizedCategory && itemPlace === normalizedPlace;
+      });
+
+      if (!matchingItems.length) {
+        setApiError(`No ${normalizedCategory.toLowerCase()}s found in ${normalizedPlace}.`);
+        return;
+      }
+
+      const printWindow = window.open('', '_blank', 'width=900,height=700');
+      if (!printWindow) {
+        setApiError('Unable to open print window. Please allow pop-ups and try again.');
+        return;
+      }
+
+      const safePlace = escapeHtml(normalizedPlace);
+      const safeCategory = escapeHtml(normalizedCategory);
+      const rowsHtml = matchingItems
+        .map((item, index) => {
+          const safeTitle = escapeHtml(getArtworkTitle(item.title));
+          const safeArtist = escapeHtml(getArtworkArtist(item.artist));
+          const safeId = escapeHtml(getDisplayItemId(item) || '');
+          const safeStatus = escapeHtml(item.status || 'Not set');
+          const thumbnailUrl = escapeHtml(item.cardImageUrl || item.imageUrl || '');
+          return `
+            <tr>
+              <td>${index + 1}</td>
+              <td>${thumbnailUrl ? `<img class="thumb" src="${thumbnailUrl}" alt="" />` : '<span class="thumb-placeholder">No image</span>'}</td>
+              <td>${safeId}</td>
+              <td>${safeTitle}</td>
+              <td>${safeArtist}</td>
+              <td>${safeStatus}</td>
+            </tr>
+          `;
+        })
+        .join('');
+
+      printWindow.document.write(`
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>${safeCategory} - ${safePlace}</title>
+            <style>
+              @page { size: A4; margin: 0.7in; }
+              body {
+                margin: 0;
+                font-family: "Avenir Next", "Segoe UI", sans-serif;
+                color: #1f2a2b;
+              }
+              .sheet {
+                display: grid;
+                gap: 0.2in;
+              }
+              h1 {
+                margin: 0;
+                font-size: 24px;
+              }
+              p {
+                margin: 0;
+                font-size: 13px;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+              }
+              th, td {
+                border: 1px solid #d8e0e1;
+                padding: 8px 10px;
+                text-align: left;
+                font-size: 12px;
+                vertical-align: middle;
+              }
+              th {
+                background: #f3f7fb;
+              }
+              .thumb {
+                width: 54px;
+                height: 54px;
+                object-fit: cover;
+                display: block;
+                border-radius: 6px;
+                border: 1px solid #d8e0e1;
+              }
+              .thumb-placeholder {
+                display: inline-block;
+                min-width: 54px;
+                color: #6b7280;
+                font-size: 11px;
+              }
+            </style>
+          </head>
+          <body>
+            <section class="sheet">
+              <h1>${safeCategory}s in ${safePlace}</h1>
+              <p><strong>Total items:</strong> ${matchingItems.length}</p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Photo</th>
+                    <th>Inventory ID</th>
+                    <th>Title</th>
+                    <th>Artist</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+              </table>
+            </section>
+            <script>
+              window.onload = function () {
+                window.focus();
+                window.print();
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch {
+      setApiError('Failed to prepare print list. Please try again.');
+    }
   };
 
   const handleEditSelectedItem = () => {
@@ -5055,15 +5189,32 @@ function App() {
             <p className="totals-subtitle">Estimated value: {formatPhp(displayedPaintingValue)}</p>
             <article className="totals-group">
               {paintingLocationRows.map(([name, count]) => (
-                <button
-                  type="button"
-                  className="totals-row totals-row-button"
-                  key={`place-${name}`}
-                  onClick={() => handleLocationFilter(name, 'Painting')}
-                >
-                  <span>{name}</span>
-                  <strong>{formatPaintingCount(count)}</strong>
-                </button>
+                <div className="totals-row totals-row-button" key={`place-${name}`}>
+                  <button type="button" className="totals-row-main" onClick={() => handleLocationFilter(name, 'Painting')}>
+                    <span>{name}</span>
+                  </button>
+                  <div className="totals-row-actions">
+                    <strong>{formatPaintingCount(count)}</strong>
+                    <button
+                      type="button"
+                      className="totals-row-print"
+                      aria-label={`Print all paintings in ${name}`}
+                      title={`Print all paintings in ${name}`}
+                      onClick={() => handlePrintItemsByLocation(name, 'Painting')}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M7 9V4h10v5M7 14H5a2 2 0 0 1-2-2v-1.5A2.5 2.5 0 0 1 5.5 8h13A2.5 2.5 0 0 1 21 10.5V12a2 2 0 0 1-2 2h-2M8 13h8v7H8zM17 11h.01"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
               ))}
             </article>
             <div className="actions">
