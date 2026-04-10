@@ -960,6 +960,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [placeFilter, setPlaceFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
+  const [checkedInventoryIds, setCheckedInventoryIds] = useState([]);
   const [displayMode, setDisplayMode] = useState('image');
   const [sortBy, setSortBy] = useState('recent');
   const [sortDirection, setSortDirection] = useState('desc');
@@ -2454,8 +2455,16 @@ function App() {
     () => inventory.reduce((sum, item) => sum + Number(item.price || 0), 0),
     [inventory]
   );
+  const checkedInventoryItems = useMemo(
+    () => inventory.filter((item) => checkedInventoryIds.includes(item.id)),
+    [checkedInventoryIds, inventory]
+  );
   const visibleInventory = filteredInventory;
   const hasMoreInventory = inventoryHasMorePages;
+
+  useEffect(() => {
+    setCheckedInventoryIds((previous) => previous.filter((id) => inventory.some((item) => item.id === id)));
+  }, [inventory]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -3371,6 +3380,129 @@ function App() {
     } catch {
       setApiError('Failed to prepare print list. Please try again.');
     }
+  };
+
+  const toggleInventoryChecked = (itemId) => {
+    setCheckedInventoryIds((previous) =>
+      previous.includes(itemId) ? previous.filter((id) => id !== itemId) : [...previous, itemId]
+    );
+  };
+
+  const handlePrintCheckedInventory = () => {
+    if (!checkedInventoryItems.length) {
+      setApiError('No inventory items selected for printing.');
+      return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=960,height=720');
+    if (!printWindow) {
+      setApiError('Unable to open print window. Please allow pop-ups and try again.');
+      return;
+    }
+
+    const rowsHtml = checkedInventoryItems
+      .map((item, index) => {
+        const thumbnailUrl = escapeHtml(item.cardImageUrl || item.imageUrl || '');
+        const safeId = escapeHtml(getDisplayItemId(item) || '');
+        const safeTitle = escapeHtml(getArtworkTitle(item.title));
+        const safeArtist = escapeHtml(getArtworkArtist(item.artist));
+        const safePlace = escapeHtml(item.place || 'Not set');
+        return `
+          <tr>
+            <td>${index + 1}</td>
+            <td>${thumbnailUrl ? `<img class="thumb" src="${thumbnailUrl}" alt="" />` : '<span class="thumb-placeholder">No image</span>'}</td>
+            <td>${safeId}</td>
+            <td>${safeTitle}</td>
+            <td>${safeArtist}</td>
+            <td>${safePlace}</td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Selected Inventory</title>
+          <style>
+            @page { size: A4; margin: 0.7in; }
+            body {
+              margin: 0;
+              font-family: "Avenir Next", "Segoe UI", sans-serif;
+              color: #1f2a2b;
+            }
+            .sheet {
+              display: grid;
+              gap: 0.2in;
+            }
+            h1 {
+              margin: 0;
+              font-size: 24px;
+            }
+            p {
+              margin: 0;
+              font-size: 13px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+            }
+            th, td {
+              border: 1px solid #d8e0e1;
+              padding: 8px 10px;
+              text-align: left;
+              font-size: 12px;
+              vertical-align: middle;
+            }
+            th {
+              background: #f3f7fb;
+            }
+            .thumb {
+              width: 54px;
+              height: 54px;
+              object-fit: cover;
+              display: block;
+              border-radius: 6px;
+              border: 1px solid #d8e0e1;
+            }
+            .thumb-placeholder {
+              display: inline-block;
+              min-width: 54px;
+              color: #6b7280;
+              font-size: 11px;
+            }
+          </style>
+        </head>
+        <body>
+          <section class="sheet">
+            <h1>Selected Inventory</h1>
+            <p><strong>Total items:</strong> ${checkedInventoryItems.length}</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Photo</th>
+                  <th>Inventory ID</th>
+                  <th>Title</th>
+                  <th>Artist</th>
+                  <th>Place</th>
+                </tr>
+              </thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </section>
+          <script>
+            window.onload = function () {
+              window.focus();
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const handleEditSelectedItem = () => {
@@ -4787,6 +4919,26 @@ function App() {
               </svg>
             )}
           </button>
+          {checkedInventoryItems.length ? (
+            <button
+              type="button"
+              className="icon-toggle"
+              onClick={handlePrintCheckedInventory}
+              aria-label={`Print ${checkedInventoryItems.length} selected inventory item${checkedInventoryItems.length > 1 ? 's' : ''}`}
+              title="Print selected inventory"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M7 9V4h10v5M7 14H5a2 2 0 0 1-2-2v-1.5A2.5 2.5 0 0 1 5.5 8h13A2.5 2.5 0 0 1 21 10.5V12a2 2 0 0 1-2 2h-2M8 13h8v7H8zM17 11h.01"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ) : null}
         </div>
         <div className="card-grid">
           {filteredInventory.length === 0 ? <p>No paintings match your filters.</p> : null}
@@ -4800,8 +4952,16 @@ function App() {
               {(() => {
                 const isExpanded = expandedCardIds.includes(item.id);
                 const statusBadge = getArtworkStatusBadge(item.status, item.isActive);
+                const isChecked = checkedInventoryIds.includes(item.id);
                 return (
                   <>
+              <label className="card-select-checkbox" aria-label={`Select ${getArtworkTitle(item.title)} for printing`}>
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => toggleInventoryChecked(item.id)}
+                />
+              </label>
               <button
                 type="button"
                 className="card-media-btn"
