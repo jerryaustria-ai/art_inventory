@@ -226,6 +226,15 @@ function readItemIdFromUrl() {
   }
 }
 
+function readResetTokenFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('resetToken') || '';
+  } catch {
+    return '';
+  }
+}
+
 function updateItemIdInUrl(itemId) {
   try {
     const url = new URL(window.location.href);
@@ -233,6 +242,20 @@ function updateItemIdInUrl(itemId) {
       url.searchParams.set('item', itemId);
     } else {
       url.searchParams.delete('item');
+    }
+    window.history.replaceState({}, '', url.toString());
+  } catch {
+    // Ignore URL sync errors in unsupported environments.
+  }
+}
+
+function updateResetTokenInUrl(resetToken) {
+  try {
+    const url = new URL(window.location.href);
+    if (resetToken) {
+      url.searchParams.set('resetToken', resetToken);
+    } else {
+      url.searchParams.delete('resetToken');
     }
     window.history.replaceState({}, '', url.toString());
   } catch {
@@ -698,10 +721,22 @@ function LoginPage({ onLogin }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isForgotOpen, setIsForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
-  const [forgotPassword, setForgotPassword] = useState('');
   const [forgotMessage, setForgotMessage] = useState('');
   const [forgotError, setForgotError] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const [resetToken, setResetToken] = useState(() => readResetTokenFromUrl());
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(() => Boolean(readResetTokenFromUrl()));
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [isApplyingReset, setIsApplyingReset] = useState(false);
+
+  useEffect(() => {
+    const nextToken = readResetTokenFromUrl();
+    setResetToken(nextToken);
+    setIsResetPasswordOpen(Boolean(nextToken));
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -730,23 +765,73 @@ function LoginPage({ onLogin }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: forgotEmail.trim().toLowerCase(),
-          newPassword: forgotPassword,
         }),
       });
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setForgotError(payload.message || 'Failed to reset password.');
+        const serverMessage = String(payload.message || '').trim();
+        if (serverMessage === 'Email and new password are required.') {
+          setForgotError('The API server is still using the old forgot-password flow. Redeploy the backend, then try again.');
+        } else {
+          setForgotError(serverMessage || 'Failed to send password reset email.');
+        }
         setIsResetting(false);
         return;
       }
 
-      setForgotMessage(payload.message || 'Password has been reset successfully.');
-      setForgotPassword('');
+      setForgotMessage(payload.message || 'Password reset confirmation email sent.');
     } catch {
-      setForgotError('Failed to reset password. Please check API server.');
+      setForgotError('Failed to send password reset email. Please check API server.');
     } finally {
       setIsResetting(false);
+    }
+  };
+
+  const handleResetPassword = async (event) => {
+    event.preventDefault();
+    setIsApplyingReset(true);
+    setResetMessage('');
+    setResetError('');
+
+    if (!resetPassword.trim()) {
+      setResetError('New password is required.');
+      setIsApplyingReset(false);
+      return;
+    }
+
+    if (resetPassword !== resetConfirmPassword) {
+      setResetError('Passwords do not match.');
+      setIsApplyingReset(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/users/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: resetToken,
+          newPassword: resetPassword,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setResetError(payload.message || 'Failed to reset password.');
+        setIsApplyingReset(false);
+        return;
+      }
+
+      setResetMessage(payload.message || 'Password has been reset successfully.');
+      setResetPassword('');
+      setResetConfirmPassword('');
+      setResetToken('');
+      updateResetTokenInUrl('');
+    } catch {
+      setResetError('Failed to reset password. Please check API server.');
+    } finally {
+      setIsApplyingReset(false);
     }
   };
 
@@ -798,7 +883,7 @@ function LoginPage({ onLogin }) {
               ×
             </button>
             <h2>Forgot Password</h2>
-            <p className="muted">Enter your account email and set a new password.</p>
+            <p className="muted">Enter your account email. If it exists, we will send a password reset confirmation email.</p>
             {forgotError ? <p className="form-error">{forgotError}</p> : null}
             {forgotMessage ? <p className="success-text">{forgotMessage}</p> : null}
             <form className="login-form" onSubmit={handleForgotPassword}>
@@ -811,17 +896,8 @@ function LoginPage({ onLogin }) {
                   required
                 />
               </label>
-              <label>
-                New Password
-                <input
-                  type="password"
-                  value={forgotPassword}
-                  onChange={(event) => setForgotPassword(event.target.value)}
-                  required
-                />
-              </label>
               <div className="actions">
-                <button type="submit">Reset Password</button>
+                <button type="submit">Send Reset Email</button>
                 <button
                   type="button"
                   className="ghost"
@@ -835,7 +911,69 @@ function LoginPage({ onLogin }) {
                 </button>
               </div>
             </form>
-            {isResetting ? <p className="muted">Resetting password...</p> : null}
+            {isResetting ? <p className="muted">Sending reset email...</p> : null}
+          </section>
+        </div>
+      ) : null}
+
+      {isResetPasswordOpen ? (
+        <div className="modal-backdrop">
+          <section className="panel modal login-forgot-modal" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => {
+                setIsResetPasswordOpen(false);
+                setResetError('');
+                setResetMessage('');
+                setResetToken('');
+                updateResetTokenInUrl('');
+              }}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h2>Reset Password</h2>
+            <p className="muted">Set your new password to complete the email confirmation.</p>
+            {resetError ? <p className="form-error">{resetError}</p> : null}
+            {resetMessage ? <p className="success-text">{resetMessage}</p> : null}
+            <form className="login-form" onSubmit={handleResetPassword}>
+              <label>
+                New Password
+                <input
+                  type="password"
+                  value={resetPassword}
+                  onChange={(event) => setResetPassword(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Confirm Password
+                <input
+                  type="password"
+                  value={resetConfirmPassword}
+                  onChange={(event) => setResetConfirmPassword(event.target.value)}
+                  required
+                />
+              </label>
+              <div className="actions">
+                <button type="submit">Reset Password</button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    setIsResetPasswordOpen(false);
+                    setResetError('');
+                    setResetMessage('');
+                    setResetToken('');
+                    updateResetTokenInUrl('');
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </form>
+            {isApplyingReset ? <p className="muted">Resetting password...</p> : null}
           </section>
         </div>
       ) : null}

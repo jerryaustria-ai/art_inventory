@@ -130,3 +130,97 @@ export async function sendLoginNotification({ to, name, role }) {
     rejected: Array.isArray(info?.rejected) ? info.rejected : [],
   };
 }
+
+export async function sendPasswordResetEmail({ to, name, resetUrl }) {
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+
+  const brevoResult = await (async () => {
+    const apiKey = process.env.BREVO_API_KEY;
+    if (!apiKey) return null;
+
+    const sender = parseFromAddress(from);
+    if (!sender.email || !to || !resetUrl) {
+      return {
+        ok: false,
+        skipped: true,
+        reason: 'Missing sender, recipient, or reset URL for Brevo API.',
+      };
+    }
+
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': apiKey,
+      },
+      body: JSON.stringify({
+        sender: {
+          name: sender.name,
+          email: sender.email,
+        },
+        to: [{ email: to }],
+        subject: 'Password Reset Confirmation - Art Inventory',
+        htmlContent: `
+          <p>Hello ${name || 'User'},</p>
+          <p>We received a request to change your password for Art Inventory.</p>
+          <p>Click the button below to confirm and set a new password:</p>
+          <p><a href="${resetUrl}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;">Reset Password</a></p>
+          <p>If you did not request this, you can ignore this email.</p>
+        `,
+        textContent: `Hello ${name || 'User'}, we received a request to change your password for Art Inventory. Open this link to confirm and set a new password: ${resetUrl}`,
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.text().catch(() => '');
+      throw new Error(`Brevo API failed (${response.status}): ${payload || 'Unknown error'}`);
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    return {
+      ok: true,
+      skipped: false,
+      provider: 'brevo-api',
+      messageId: payload?.messageId || '',
+      accepted: [to],
+      rejected: [],
+    };
+  })();
+
+  if (brevoResult) {
+    return brevoResult;
+  }
+
+  const transporter = await createTransporter();
+
+  if (!transporter || !from || !to || !resetUrl) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'Missing SMTP/Brevo configuration, recipient, or reset URL.',
+    };
+  }
+
+  const info = await transporter.sendMail({
+    from,
+    to,
+    subject: 'Password Reset Confirmation - Art Inventory',
+    html: `
+      <p>Hello ${name || 'User'},</p>
+      <p>We received a request to change your password for Art Inventory.</p>
+      <p>Click the button below to confirm and set a new password:</p>
+      <p><a href="${resetUrl}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;">Reset Password</a></p>
+      <p>If you did not request this, you can ignore this email.</p>
+    `,
+    text: `Hello ${name || 'User'}, we received a request to change your password for Art Inventory. Open this link to confirm and set a new password: ${resetUrl}`,
+  });
+
+  return {
+    ok: true,
+    skipped: false,
+    provider: 'smtp',
+    messageId: info?.messageId || '',
+    accepted: Array.isArray(info?.accepted) ? info.accepted : [],
+    rejected: Array.isArray(info?.rejected) ? info.rejected : [],
+  };
+}

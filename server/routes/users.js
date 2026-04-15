@@ -1,12 +1,26 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import User from '../models/User.js';
-import { sendLoginNotification } from '../utils/mailer.js';
+import { sendLoginNotification, sendPasswordResetEmail } from '../utils/mailer.js';
 import { writeAuditLog } from '../utils/audit.js';
 
 const router = express.Router();
 const BCRYPT_ROUNDS = 10;
+const PASSWORD_RESET_TOKEN_TTL_MS = 1000 * 60 * 30;
+
+function getClientAppUrl() {
+  const rawClientUrl = String(process.env.CLIENT_URL || '').trim();
+  if (!rawClientUrl) {
+    return 'http://localhost:5173';
+  }
+
+  return rawClientUrl
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)[0] || 'http://localhost:5173';
+}
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -109,10 +123,10 @@ router.post('/login', loginLimiter, async (req, res) => {
 });
 
 router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
-  const { email, newPassword } = req.body || {};
+  const { email } = req.body || {};
 
-  if (!email || !newPassword) {
-    return res.status(400).json({ message: 'Email and new password are required.' });
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required.' });
   }
 
   try {
@@ -121,7 +135,52 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const resetUrl = new URL(getClientAppUrl());
+    resetUrl.searchParams.set('resetToken', rawToken);
+
+    user.passwordResetToken = hashedToken;
+    user.passwordResetExpiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_MS);
+    await user.save();
+
+    const emailResult = await sendPasswordResetEmail({
+      to: user.email,
+      name: user.name,
+      resetUrl: resetUrl.toString(),
+    });
+
+    if (!emailResult?.ok) {
+      return res.status(500).json({ message: 'Failed to send password reset email.' });
+    }
+
+    return res.json({ message: 'Password reset confirmation email sent.' });
+  } catch {
+    return res.status(400).json({ message: 'Failed to process password reset request.' });
+  }
+});
+
+router.post('/reset-password', forgotPasswordLimiter, async (req, res) => {
+  const { token, newPassword } = req.body || {};
+
+  if (!token || !newPassword) {
+    return res.status(400).json({ message: 'Reset token and new password are required.' });
+  }
+
+  try {
+    const hashedToken = crypto.createHash('sha256').update(String(token)).digest('hex');
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpiresAt: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Reset link is invalid or expired.' });
+    }
+
     user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    user.passwordResetToken = '';
+    user.passwordResetExpiresAt = null;
     await user.save();
 
     return res.json({ message: 'Password has been reset successfully.' });
