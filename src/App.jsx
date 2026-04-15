@@ -721,9 +721,9 @@ function LoginPage({ onLogin }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isForgotOpen, setIsForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
-  const [forgotMessage, setForgotMessage] = useState('');
   const [forgotError, setForgotError] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const [isForgotSuccessOpen, setIsForgotSuccessOpen] = useState(false);
   const [resetToken, setResetToken] = useState(() => readResetTokenFromUrl());
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(() => Boolean(readResetTokenFromUrl()));
   const [resetPassword, setResetPassword] = useState('');
@@ -756,7 +756,6 @@ function LoginPage({ onLogin }) {
   const handleForgotPassword = async (event) => {
     event.preventDefault();
     setIsResetting(true);
-    setForgotMessage('');
     setForgotError('');
 
     try {
@@ -780,7 +779,8 @@ function LoginPage({ onLogin }) {
         return;
       }
 
-      setForgotMessage(payload.message || 'Password reset confirmation email sent.');
+      setIsForgotOpen(false);
+      setIsForgotSuccessOpen(true);
     } catch {
       setForgotError('Failed to send password reset email. Please check API server.');
     } finally {
@@ -857,8 +857,8 @@ function LoginPage({ onLogin }) {
             onClick={() => {
               setForgotEmail(email);
               setIsForgotOpen(true);
+              setIsForgotSuccessOpen(false);
               setForgotError('');
-              setForgotMessage('');
             }}
           >
             Forgot Password?
@@ -876,7 +876,6 @@ function LoginPage({ onLogin }) {
               onClick={() => {
                 setIsForgotOpen(false);
                 setForgotError('');
-                setForgotMessage('');
               }}
               aria-label="Close"
             >
@@ -885,7 +884,6 @@ function LoginPage({ onLogin }) {
             <h2>Forgot Password</h2>
             <p className="muted">Enter your account email. If it exists, we will send a password reset confirmation email.</p>
             {forgotError ? <p className="form-error">{forgotError}</p> : null}
-            {forgotMessage ? <p className="success-text">{forgotMessage}</p> : null}
             <form className="login-form" onSubmit={handleForgotPassword}>
               <label>
                 Email
@@ -904,7 +902,6 @@ function LoginPage({ onLogin }) {
                   onClick={() => {
                     setIsForgotOpen(false);
                     setForgotError('');
-                    setForgotMessage('');
                   }}
                 >
                   Close
@@ -912,6 +909,29 @@ function LoginPage({ onLogin }) {
               </div>
             </form>
             {isResetting ? <p className="muted">Sending reset email...</p> : null}
+          </section>
+        </div>
+      ) : null}
+
+      {isForgotSuccessOpen ? (
+        <div className="modal-backdrop">
+          <section className="panel modal login-forgot-modal" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => setIsForgotSuccessOpen(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h2>Password Reset Email Sent</h2>
+            <p className="success-text">Password reset email sent successfully.</p>
+            <p className="muted">Please check your inbox and follow the instructions to reset your password.</p>
+            <div className="actions">
+              <button type="button" onClick={() => setIsForgotSuccessOpen(false)}>
+                Back to Login
+              </button>
+            </div>
           </section>
         </div>
       ) : null}
